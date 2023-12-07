@@ -887,18 +887,22 @@ class Client extends EventEmitter {
         }
 
         const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const chat = await window.Store.Chat.find(chatWid);
-            console.log(`evaluate : ${chatId}`);
+            try {
+                const chatWid = window.Store.WidFactory.createWid(chatId);
+                const chat = await window.Store.Chat.find(chatWid);
 
-            if (sendSeen) {
-                await window.WWebJS.sendSeen(chatId);
+                if (sendSeen) {
+                    await window.WWebJS.sendSeen(chatId);
+                }
+                const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
+                return msg.serialize();
+            } catch (err) {
+                return { whats_error: JSON.stringify(err, Object.getOwnPropertyNames(err)) }
             }
-            console.log(`evaluate : ${chatWid}`);
-            const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
-            console.log(`msg.serialize`);
-            return msg.serialize();
         }, chatId, content, internalOptions, sendSeen);
+
+        if (newMessage.whats_error)
+            throw new Error(newMessage.whats_error);
 
         return new Message(this, newMessage);
     }
