@@ -891,16 +891,16 @@ class Client extends EventEmitter {
             try {
                 aditional_logs += " try createWid";
                 const chatWid = window.Store.WidFactory.createWid(chatId);
-                aditional_logs += ` found chatWid ${JSON.stringify(chatWid)}`;
+                aditional_logs += ` found chatWid._serialized ${JSON.stringify(chatWid._serialized)}`;
                 const chat = await window.Store.Chat.find(chatWid);
-                aditional_logs += ` found chat ${JSON.stringify(chat)}`;
+                aditional_logs += ` found chat.id ${JSON.stringify(chat.id)}`;
                 if (sendSeen) {
                     aditional_logs += " try sendSeen";
                     await window.WWebJS.sendSeen(chatId);
                 }
                 aditional_logs += " try sendMessage";
                 const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
-                aditional_logs += ` sent msg ${JSON.stringify(msg)}`;
+                aditional_logs += ` sent msg.id ${JSON.stringify(msg.id)}`;
                 return msg.serialize();
             } catch (err) {
                 err.aditional_logs = aditional_logs
