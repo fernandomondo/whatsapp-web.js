@@ -324,6 +324,10 @@ exports.LoadUtils = () => {
             delete listOptions.list.footer;
         }
 
+        const delay = ms => new Promise(res => setTimeout(res, ms));
+
+        await delay(60000); //force waiting 60sec;
+
         const meUser = window.Store.User.getMaybeMeUser();
         const isMD = window.Store.MDBackend;
         const newId = await window.Store.MsgKey.newId();
