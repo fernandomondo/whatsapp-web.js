@@ -163,6 +163,7 @@ exports.LoadUtils = () => {
     window.WWebJS.sendMessage = async (chat, content, options = {}) => {
         let attOptions = {};
         if (options.attachment) {
+            console.log("attachment");
             attOptions = options.sendMediaAsSticker
                 ? await window.WWebJS.processStickerData(options.attachment)
                 : await window.WWebJS.processMediaData(options.attachment, {
@@ -182,6 +183,7 @@ exports.LoadUtils = () => {
         }
         let quotedMsgOptions = {};
         if (options.quotedMessageId) {
+            console.log("window.Store.Msg.get");
             let quotedMessage = window.Store.Msg.get(options.quotedMessageId);
 
             // TODO remove .canReply() once all clients are updated to >= v2.2241.6
@@ -216,6 +218,7 @@ exports.LoadUtils = () => {
 
         let _pollOptions = {};
         if (options.poll) {
+            console.log("options.poll");
             const { pollName, pollOptions } = options.poll;
             const { allowMultipleAnswers, messageSecret } = options.poll.options;
             _pollOptions = {
@@ -268,6 +271,7 @@ exports.LoadUtils = () => {
             delete options.linkPreview;
             const link = window.Store.Validators.findLink(content);
             if (link) {
+                console.log("window.Store.LinkPreview.getLinkPreview");
                 let preview = await window.Store.LinkPreview.getLinkPreview(link);
                 if (preview && preview.data) {
                     preview = preview.data;
@@ -318,6 +322,7 @@ exports.LoadUtils = () => {
             delete listOptions.list.footer;
         }
 
+        console.log("window.Store.User.getMaybeMeUser");
         const meUser = window.Store.User.getMaybeMeUser();
         const isMD = window.Store.MDBackend;
         const newId = await window.Store.MsgKey.newId();
@@ -358,7 +363,7 @@ exports.LoadUtils = () => {
             ...listOptions,
             ...extraOptions
         };
-
+        console.log("window.Store.SendMessage.addAndSendMsgToChat");
         await window.Store.SendMessage.addAndSendMsgToChat(chat, message);
         return window.Store.Msg.get(newMsgId._serialized);
     };
