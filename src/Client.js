@@ -885,21 +885,17 @@ class Client extends EventEmitter {
         }
 
         const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
-            console.log("starting evaluate");
             try {
-                console.log("try createWid");
                 const chatWid = window.Store.WidFactory.createWid(chatId);
-                console.log(`found chatWid._serialized ${JSON.stringify(chatWid._serialized)}`);
                 const chat = await window.Store.Chat.find(chatWid);
-                console.log(`found chat.id ${JSON.stringify(chat.id)}`);
                 if (sendSeen) {
-                    console.log("try sendSeen");
-                    await window.WWebJS.sendSeen(chatId);
+                   await window.WWebJS.sendSeen(chatId);
                 }
-                console.log("try sendMessage");
                 const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
-                console.log(`sent msg.id ${JSON.stringify(msg.id)}`);
-                return msg.serialize();
+                console.log(`sent msg. msg.id: ${JSON.stringify(msg.id)}`);
+                var m = { id: msg.id, t: msg.t };
+                console.log(`serialize to m: ${JSON.stringify(m)}`);
+                return m;
             } catch (err) {
                 err.aditional_logs = aditional_logs
                 return { whats_error: JSON.stringify(err, Object.getOwnPropertyNames(err)) }
