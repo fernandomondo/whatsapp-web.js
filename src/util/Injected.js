@@ -358,6 +358,7 @@ exports.LoadUtils = () => {
             ...listOptions,
             ...extraOptions
         };
+        
         await window.Store.SendMessage.addAndSendMsgToChat(chat, message);
         return window.Store.Msg.get(newMsgId._serialized);
     };
