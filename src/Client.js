@@ -816,8 +816,8 @@ class Client extends EventEmitter {
      * Closes the client
      */
     async destroy() {
-        await this.pupBrowser?.close();
-        await this.authStrategy?.destroy();
+        await this.pupBrowser.close();
+        await this.authStrategy.destroy();
     }
 
     /**
@@ -1108,7 +1108,7 @@ class Client extends EventEmitter {
      * @param {string} chatId 
      * @returns {Promise<Chat|Channel>}
      */
-     async getChatById(chatId) {
+    async getChatById(chatId) {
         const chat = await this.pupPage.evaluate(async chatId => {
             return await window.WWebJS.getChat(chatId);
         }, chatId);
@@ -2313,33 +2313,19 @@ class Client extends EventEmitter {
      * @returns {Promise<Array<{ lid: string, pn: string }>>}
      */
     async getContactLidAndPhone(userIds) {
-        return await this.pupPage.evaluate(async (userIds) => {
-            if (!Array.isArray(userIds)) userIds = [userIds];
-
-            return await Promise.all(userIds.map(async (userId) => {
+        return await this.pupPage.evaluate((userIds) => {
+            !Array.isArray(userIds) && (userIds = [userIds]);
+            return userIds.map(userId => {
                 const wid = window.Store.WidFactory.createWid(userId);
                 const isLid = wid.server === 'lid';
-
-                let lid = isLid ? wid : window.Store.LidUtils.getCurrentLid(wid);
-                let phone = isLid ? window.Store.LidUtils.getPhoneNumber(wid) : wid;
-
-                if (!isLid && !lid) {
-                    const queryResult = await window.Store.QueryExist(wid);
-                    if (!queryResult?.wid) return {};
-                    lid = window.Store.LidUtils.getCurrentLid(wid);
-                }
-
-                if (isLid && !phone) {
-                    const queryResult = await window.Store.QueryExist(wid);
-                    if (!queryResult?.wid) return {};
-                    phone = window.Store.LidUtils.getPhoneNumber(wid);
-                }
+                const lid = isLid ? wid : window.Store.LidUtils.getCurrentLid(wid);
+                const phone = isLid ? window.Store.LidUtils.getPhoneNumber(wid) : wid;
 
                 return {
-                    lid: lid?._serialized,
-                    pn: phone?._serialized
+                    lid: lid._serialized,
+                    pn: phone._serialized
                 };
-            }));
+            });
         }, userIds);
     }
 }
