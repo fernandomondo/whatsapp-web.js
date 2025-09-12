@@ -846,8 +846,8 @@ class Client extends EventEmitter {
      * Closes the client
      */
     async destroy() {
-        await this.pupBrowser.close();
-        await this.authStrategy.destroy();
+        await this.pupBrowser?.close();
+        await this.authStrategy?.destroy();
     }
 
     /**
@@ -1138,7 +1138,7 @@ class Client extends EventEmitter {
      * @param {string} chatId 
      * @returns {Promise<Chat|Channel>}
      */
-    async getChatById(chatId) {
+     async getChatById(chatId) {
         const chat = await this.pupPage.evaluate(async chatId => {
             return await window.WWebJS.getChat(chatId);
         }, chatId);
