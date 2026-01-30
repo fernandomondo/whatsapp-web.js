@@ -13,7 +13,10 @@ exports.LoadUtils = () => {
         const chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
         if (chat) {
             window.Store.WAWebStreamModel.Stream.markAvailable();
-            await window.Store.SendSeen.markSeen(chat);
+            await window.Store.SendSeen.sendSeen({
+                chat: chat,
+                threadId: undefined
+            });         
             window.Store.WAWebStreamModel.Stream.markUnavailable();
             return true;
         }
@@ -450,7 +453,7 @@ exports.LoadUtils = () => {
 
     window.WWebJS.processMediaData = async (mediaInfo, { forceSticker, forceGif, forceVoice, forceDocument, forceMediaHd, sendToChannel, sendToStatus }) => {
         const file = window.WWebJS.mediaInfoToFile(mediaInfo);
-        const opaqueData = await window.Store.OpaqueData.createFromData(file, file.type);
+        const opaqueData = await window.Store.OpaqueData.createFromData(file, mediaInfo.mimetype);
         const mediaParams = {
             asSticker: forceSticker,
             asGif: forceGif,
@@ -504,7 +507,7 @@ exports.LoadUtils = () => {
             mimetype: mediaData.mimetype,
             mediaObject,
             mediaType,
-            ...(sendToChannel ? { calculateToken: window.Store.SendChannelMessage.getRandomFilehash() } : {})
+            ...(sendToChannel ? { calculateToken: window.Store.SendChannelMessage.getRandomFilehash } : {})
         };
 
         const uploadedMedia = !sendToChannel
@@ -643,7 +646,11 @@ exports.LoadUtils = () => {
         if (chat.groupMetadata) {
             model.isGroup = true;
             const chatWid = window.Store.WidFactory.createWid(chat.id._serialized);
-            await window.Store.GroupMetadata?.update(chatWid);
+            const groupMetadata = window.Store.GroupMetadata || window.Store.WAWebGroupMetadataCollection;
+            await groupMetadata.update(chatWid);
+            chat.groupMetadata.participants._models
+                .filter(x => x.id?._serialized?.endsWith('@lid'))
+                .forEach(x => x.contact?.phoneNumber && (x.id = x.contact.phoneNumber));
             model.groupMetadata = chat.groupMetadata.serialize();
 
             model.groupMetadata.participants = chat.groupMetadata.participants._models.map(item => {
@@ -659,7 +666,8 @@ exports.LoadUtils = () => {
         }
 
         if (chat.newsletterMetadata) {
-            await window.Store.NewsletterMetadataCollection?.update(chat.id);
+            const newsletterMetadata = window.Store.NewsletterMetadataCollection || window.Store.WAWebNewsletterMetadataCollection;
+            await newsletterMetadata.update(chat.id);
             model.channelMetadata = chat.newsletterMetadata.serialize();
             model.channelMetadata.createdAtTs = chat.newsletterMetadata.creationTime;
         }
