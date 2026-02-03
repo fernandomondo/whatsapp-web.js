@@ -572,10 +572,13 @@ exports.LoadUtils = () => {
 
         if (isChannel) {
             try {
-                chat = window.Store.WAWebNewsletterMetadataCollection.get(chatId);
+                const collection = window.Store.WAWebNewsletterCollection|| window.Store.WAWebNewsletterMetadataCollection;
+
+                chat = collection.get(chatId);
+
                 if (!chat) {
                     await window.Store.ChannelUtils.loadNewsletterPreviewChat(chatId);
-                    chat = await window.Store.WAWebNewsletterMetadataCollection.find(chatWid);
+                    chat = await collection.find(chatWid);
                 }
             } catch (err) {
                 chat = null;
@@ -625,7 +628,8 @@ exports.LoadUtils = () => {
     };
 
     window.WWebJS.getChannels = async () => {
-        const channels = window.Store.WAWebNewsletterMetadataCollection.getModelsArray();
+        const collection = window.Store.WAWebNewsletterCollection || window.Store.WAWebNewsletterMetadataCollection;
+        const channels = collection.getModelsArray();
         const channelPromises = channels?.map((channel) => window.WWebJS.getChatModel(channel, { isChannel: true }));
         return await Promise.all(channelPromises);
     };
