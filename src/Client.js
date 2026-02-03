@@ -893,7 +893,7 @@ class Client extends EventEmitter {
         if (isConnected) {
             await browser.close();
         }
-        await this.authStrategy.destroy();
+        await this.authStrategy?.destroy();
     }
 
     /**
@@ -905,7 +905,7 @@ class Client extends EventEmitter {
                 return window.Store.AppState.logout();
             }
         });
-        await this.pupBrowser.close();
+        await this.pupBrowser?.close();
 
         let maxDelay = 0;
         while (this.pupBrowser.isConnected() && (maxDelay < 10)) { // waits a maximum of 1 second before calling the AuthStrategy
