@@ -222,13 +222,13 @@ class Client extends EventEmitter {
 
                 //Load util functions (serializers, helper functions)
                 await this.pupPage.evaluate(LoadUtils);
-                
+
                 let start = Date.now();
                 let res = false;
-                while(start > (Date.now() - 30000)){
+                while (start > (Date.now() - 30000)) {
                     // Check window.WWebJS Injection
                     res = await this.pupPage.evaluate('window.WWebJS != undefined');
-                    if(res){break;}
+                    if (res) { break; }
                     await new Promise(r => setTimeout(r, 200));
                 }
                 if (!res) {
@@ -345,7 +345,7 @@ class Client extends EventEmitter {
         if (this.options.evalOnNewDoc !== undefined) {
             await page.evaluateOnNewDocument(this.options.evalOnNewDoc);
         }
-        
+
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
             timeout: 0,
@@ -746,7 +746,7 @@ class Client extends EventEmitter {
             }
             Chat.on('remove', async (chat) => { window.onRemoveChatEvent(await window.WWebJS.getChatModel(chat)); });
             Chat.on('change:archive', async (chat, currState, prevState) => { window.onArchiveChatEvent(await window.WWebJS.getChatModel(chat), currState, prevState); });
-            Msg.on('add', (msg) => { 
+            Msg.on('add', (msg) => {
                 if (msg.isNewMsg) {
                     if (msg.type === 'ciphertext') {
                         // defer message event until ciphertext is resolved (type changed)
@@ -757,9 +757,9 @@ class Client extends EventEmitter {
                     }
                 }
             });
-            Chat.on('change:unreadCount', (chat) => {window.onChatUnreadCountEvent(chat);});
+            Chat.on('change:unreadCount', (chat) => { window.onChatUnreadCountEvent(chat); });
 
-            window.WWebJS.injectToFunction({ module: 'WAWebAddonReactionTableMode', function: 'reactionTableMode.bulkUpsert'}, (module, origFunction, ...args) => {
+            window.WWebJS.injectToFunction({ module: 'WAWebAddonReactionTableMode', function: 'reactionTableMode.bulkUpsert' }, (module, origFunction, ...args) => {
                 window.onReaction(args[0].map(reaction => {
                     const msgKey = reaction.id;
                     const parentMsgKey = reaction.reactionParentKey;
@@ -767,13 +767,13 @@ class Client extends EventEmitter {
                     const sender = reaction.author ?? reaction.from;
                     const senderUserJid = sender._serialized;
 
-                    return {...reaction, msgKey, parentMsgKey, senderUserJid, timestamp };
+                    return { ...reaction, msgKey, parentMsgKey, senderUserJid, timestamp };
                 }));
 
                 return origFunction.apply(module, args);
             });
-            
-            window.WWebJS.injectToFunction({ module: 'WAWebAddonPollVoteTableMode', function: 'pollVoteTableMode.bulkUpsert'}, async (module, origFunction, ...args) => {
+
+            window.WWebJS.injectToFunction({ module: 'WAWebAddonPollVoteTableMode', function: 'pollVoteTableMode.bulkUpsert' }, async (module, origFunction, ...args) => {
                 const votes = await Promise.all(args[0].map(async vote => {
                     const msgKey = vote.id;
                     const parentMsgKey = vote.pollUpdateParentKey;
@@ -1084,7 +1084,7 @@ class Client extends EventEmitter {
             if (!chatWid.isUser()) {
                 return false;
             }
-            
+
             return await (window.require('WAWebNewsletterSendMsgAction')).sendNewsletterAdminInviteMessage(
                 chat,
                 {
@@ -1210,7 +1210,7 @@ class Client extends EventEmitter {
     async getMessageById(messageId) {
         const msg = await this.pupPage.evaluate(async messageId => {
             let msg = (window.require('WAWebCollections')).Msg.get(messageId);
-            if(msg) return window.WWebJS.getMessageModel(msg);
+            if (msg) return window.WWebJS.getMessageModel(msg);
 
             const params = messageId.split('_');
             if (params.length !== 3 && params.length !== 4) throw new Error('Invalid serialized message id specified');
@@ -1235,7 +1235,7 @@ class Client extends EventEmitter {
             const chatWid = window.require('WAWebWidFactory').createWid(chatId);
             const chat = (window.require('WAWebCollections')).Chat.get(chatWid) ?? await (window.require('WAWebCollections')).Chat.find(chatWid);
             if (!chat) return [];
-            
+
             const msgs = await (window.require('WAWebPinInChatSchema')).getTable().equals(['chatId'], chatWid.toString());
 
             const pinnedMsgs = (
@@ -1367,7 +1367,7 @@ class Client extends EventEmitter {
      */
     async setDisplayName(displayName) {
         const couldSet = await this.pupPage.evaluate(async displayName => {
-            if(!(window.require('WAWebConnModel').Conn).canSetMyPushname()) return false;
+            if (!(window.require('WAWebConnModel').Conn).canSetMyPushname()) return false;
             await (window.require('WAWebSetPushnameConnAction')).setPushname(displayName);
             return true;
         }, displayName);
@@ -1521,16 +1521,13 @@ class Client extends EventEmitter {
     async getProfilePicUrl(contactId) {
         const profilePic = await this.pupPage.evaluate(async contactId => {
             try {
-                const chatWid = window.require('WAWebWidFactory').createWid(contactId);
-                return window.WWebJS.compareWwebVersions(window.Debug.VERSION, '<', '2.3000.0')
-                    ? await window.require('WAWebContactProfilePicThumbBridge').profilePicFind(chatWid)
-                    : await window.require('WAWebContactProfilePicThumbBridge').requestProfilePicFromServer(chatWid);
+                const chat = await window.WWebJS.getChat(contactId);
+                return await window.require('WAWebContactProfilePicThumbBridge').requestProfilePicFromServer(chat);
             } catch (err) {
                 if (err.name === 'ServerStatusCodeError') return undefined;
                 throw err;
             }
         }, contactId);
-
         return profilePic ? profilePic.eurl : undefined;
     }
 
@@ -1544,8 +1541,8 @@ class Client extends EventEmitter {
             let contact = (window.require('WAWebCollections')).Contact.get(contactId);
             if (!contact) {
                 const wid = window.require('WAWebWidFactory').createWid(contactId);
-                const chatConstructor = (window.require('WAWebCollections')).Contact.getModelsArray().find(c=>!c.isGroup).constructor;
-                contact = new chatConstructor({id: wid});
+                const chatConstructor = (window.require('WAWebCollections')).Contact.getModelsArray().find(c => !c.isGroup).constructor;
+                contact = new chatConstructor({ id: wid });
             }
 
             if (contact.commonGroups) {
@@ -1569,7 +1566,7 @@ class Client extends EventEmitter {
     */
     async resetState() {
         await this.pupPage.evaluate(() => {
-            window.require('WAWebSocketModel').Socket.reconnect(); 
+            window.require('WAWebSocketModel').Socket.reconnect();
         });
     }
 
@@ -1921,7 +1918,7 @@ class Client extends EventEmitter {
             if (![0, 1, 2, 3].includes(view)) view = 0;
 
             const { countryCodesIso } = window.require('WAWebCountriesNativeCountryNames');
-            
+
             countryCodes = countryCodes.length === 1 && countryCodes[0] === currentRegion
                 ? countryCodes
                 : countryCodes.filter((code) => Object.keys(countryCodesIso).includes(code));
@@ -1941,7 +1938,7 @@ class Client extends EventEmitter {
                 categories: [],
                 cursorToken: ''
             };
-            
+
             const originalFunction = window.require('WAWebNewsletterGatingUtils').getNewsletterDirectoryPageSize;
             limit !== 50 && (window.require('WAWebNewsletterGatingUtils').getNewsletterDirectoryPageSize = () => limit);
 
@@ -2380,10 +2377,10 @@ class Client extends EventEmitter {
     async saveOrEditAddressbookContact(phoneNumber, firstName, lastName, syncToAddressbook = false) {
         return await this.pupPage.evaluate(async (phoneNumber, firstName, lastName, syncToAddressbook) => {
             return await (window.require('WAWebSaveContactAction')).saveContactAction({
-                'firstName' : firstName,
-                'lastName' : lastName,
-                'phoneNumber' : phoneNumber,
-                'prevPhoneNumber' : phoneNumber,
+                'firstName': firstName,
+                'lastName': lastName,
+                'phoneNumber': phoneNumber,
+                'prevPhoneNumber': phoneNumber,
                 'syncToAddressbook': syncToAddressbook,
                 'username': undefined
             });
@@ -2398,7 +2395,7 @@ class Client extends EventEmitter {
     async deleteAddressbookContact(phoneNumber) {
         return await this.pupPage.evaluate(async (phoneNumber) => {
             const wid = window.require('WAWebWidFactory').createWid(phoneNumber);
-            return await (window.require('WAWebDeleteContactAction')).deleteContactAction({phoneNumber: wid});
+            return await (window.require('WAWebDeleteContactAction')).deleteContactAction({ phoneNumber: wid });
         }, phoneNumber);
     }
 
@@ -2483,10 +2480,10 @@ class Client extends EventEmitter {
         if (!msg) return [];
         if (msg.type != MessageTypes.POLL_CREATION) throw 'Invalid usage! Can only be used with a pollCreation message';
 
-        const pollVotes = await this.pupPage.evaluate( async (msg) => {
+        const pollVotes = await this.pupPage.evaluate(async (msg) => {
             const msgKey = (window.require('WAWebMsgKey')).fromString(msg.id._serialized);
             let pollVotes = await (window.require('WAWebPollsVotesSchema')).getTable().equals(['parentMsgKey'], msgKey.toString());
-            
+
             return pollVotes.map(item => {
                 const typedArray = new Uint8Array(item.selectedOptionLocalIds);
                 return {
