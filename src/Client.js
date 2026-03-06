@@ -348,7 +348,7 @@ class Client extends EventEmitter {
         if (this.options.evalOnNewDoc !== undefined) {
             await page.evaluateOnNewDocument(this.options.evalOnNewDoc);
         }
-        
+
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
             timeout: 0,
@@ -770,7 +770,7 @@ class Client extends EventEmitter {
                     const sender = reaction.author ?? reaction.from;
                     const senderUserJid = sender._serialized;
 
-                    return {...reaction, msgKey, parentMsgKey, senderUserJid, timestamp };
+                    return { ...reaction, msgKey, parentMsgKey, senderUserJid, timestamp };
                 }));
 
                 return ogMethod(...args);
@@ -1529,14 +1529,13 @@ class Client extends EventEmitter {
     async getProfilePicUrl(contactId) {
         const profilePic = await this.pupPage.evaluate(async contactId => {
             try {
-                const chatWid = window.Store.WidFactory.createWid(contactId);
-                return await window.Store.ProfilePic.requestProfilePicFromServer(chatWid);
+                const chat = await window.WWebJS.getChat(contactId);
+                return await window.require('WAWebContactProfilePicThumbBridge').requestProfilePicFromServer(chat);
             } catch (err) {
                 if (err.name === 'ServerStatusCodeError') return undefined;
                 throw err;
             }
         }, contactId);
-
         return profilePic ? profilePic.eurl : undefined;
     }
 
