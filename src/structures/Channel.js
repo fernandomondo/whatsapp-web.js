@@ -453,6 +453,7 @@ class Channel extends Base {
                                 let merged = [
                                     ...loaded,
                                     ...(anchorMsg ? [anchorMsg] : []),
+                                    ...msgs,
                                 ];
                                 merged = merged.filter(
                                     (m) =>

@@ -326,6 +326,7 @@ class Chat extends Base {
                                 let merged = [
                                     ...loaded,
                                     ...(anchorMsg ? [anchorMsg] : []),
+                                    ...msgs,
                                 ];
                                 merged = merged.filter(
                                     (m) => !m.isNotification,
