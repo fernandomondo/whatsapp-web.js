@@ -350,11 +350,13 @@ class Channel extends Base {
                 let msgs = channel.msgs.getModelsArray().filter(msgFilter);
 
                 if (searchOptions && searchOptions.limit > 0) {
-                    const msgFindLocal = window.require(
-                        'WAWebDBMessageFindLocal',
-                    );
-                    const WAWebMsgKey = window.require('WAWebMsgKey');
-                    const MsgStore = window.require('WAWebCollections').Msg;
+                    while (msgs.length < searchOptions.limit) {
+                        const loadedMessages = await window
+                            .require('WAWebChatLoadMessages')
+                            .loadEarlierMsgs({ chat: channel });
+                        if (!loadedMessages || !loadedMessages.length) break;
+                        msgs = [...loadedMessages.filter(msgFilter), ...msgs];
+                    }
 
                     const findBefore = async (anchorKey, count) => {
                         if (
