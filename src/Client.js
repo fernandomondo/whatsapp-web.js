@@ -1529,8 +1529,40 @@ class Client extends EventEmitter {
             );
         }
 
+        // For large media files, inject the base64 data into the browser in chunks
+        // to avoid hitting Puppeteer's evaluate serialization limit (~50-80MB)
+        const LARGE_MEDIA_CHUNK_SIZE = 45 * 1024 * 1024; // 45MB of base64 chars per chunk
+        let largeMediaKey = null;
+
+        if (
+            internalOptions.media &&
+            internalOptions.media.data &&
+            internalOptions.media.data.length > LARGE_MEDIA_CHUNK_SIZE
+        ) {
+            largeMediaKey = `__wwebjs_large_media_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const mediaData = internalOptions.media.data;
+
+            await this.pupPage.evaluate((key) => { window[key] = ''; }, largeMediaKey);
+
+            for (let i = 0; i < mediaData.length; i += LARGE_MEDIA_CHUNK_SIZE) {
+                const chunk = mediaData.slice(i, i + LARGE_MEDIA_CHUNK_SIZE);
+                await this.pupPage.evaluate((key, chunk) => { window[key] += chunk; }, largeMediaKey, chunk);
+            }
+
+            // Strip data from the options passed through evaluate args; restored in-browser from the window variable
+            internalOptions = {
+                ...internalOptions,
+                media: { ...internalOptions.media, data: null },
+            };
+        }
+
         const sentMsg = await this.pupPage.evaluate(
-            async (chatId, content, options, sendSeen) => {
+            async (chatId, content, options, sendSeen, largeMediaKey) => {
+                if (largeMediaKey && options.media) {
+                    options.media.data = window[largeMediaKey];
+                    delete window[largeMediaKey];
+                }
+
                 const chat = await window.WWebJS.getChat(chatId, {
                     getAsModel: false,
                 });
@@ -1552,7 +1584,13 @@ class Client extends EventEmitter {
             content,
             internalOptions,
             sendSeen,
+            largeMediaKey,
         );
+
+        // Clean up window variable if chunking failed partway
+        if (largeMediaKey) {
+            await this.pupPage.evaluate((key) => { delete window[key]; }, largeMediaKey).catch(() => {});
+        }
 
         return sentMsg ? new Message(this, sentMsg) : undefined;
     }
