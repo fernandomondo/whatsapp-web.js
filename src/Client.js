@@ -12,7 +12,6 @@ const {
     WAState,
     MessageTypes,
 } = require('./util/Constants');
-const { ExposeAuthStore } = require('./util/Injected/AuthStore/AuthStore');
 const { LoadUtils } = require('./util/Injected/Utils');
 const ChatFactory = require('./factories/ChatFactory');
 const ContactFactory = require('./factories/ContactFactory');
@@ -107,6 +106,7 @@ class Client extends EventEmitter {
 
         Util.setFfmpegPath(this.options.ffmpegPath);
     }
+
     /**
      * Injection logic
      * Private function
@@ -139,8 +139,6 @@ class Client extends EventEmitter {
         );
         const pairWithPhoneNumber = this.options.pairWithPhoneNumber;
         const version = await this.getWWebVersion();
-
-        await this.pupPage.evaluate(ExposeAuthStore);
 
         const needAuthentication = await this.pupPage.evaluate(async () => {
             let state = window.require('WAWebSocketModel').Socket.state;
@@ -244,19 +242,21 @@ class Client extends EventEmitter {
                 );
 
                 await this.pupPage.evaluate(async () => {
-                    const registrationInfo =
-                        await window.AuthStore.RegistrationUtils.waSignalStore.getRegistrationInfo();
-                    const noiseKeyPair =
-                        await window.AuthStore.RegistrationUtils.waNoiseInfo.get();
-                    const staticKeyB64 = window.AuthStore.Base64Tools.encodeB64(
-                        noiseKeyPair.staticKeyPair.pubKey,
-                    );
-                    const identityKeyB64 =
-                        window.AuthStore.Base64Tools.encodeB64(
-                            registrationInfo.identityKeyPair.pubKey,
-                        );
-                    const platform =
-                        window.AuthStore.RegistrationUtils.DEVICE_PLATFORM;
+                    const registrationInfo = await window
+                        .require('WAWebSignalStoreApi')
+                        .waSignalStore.getRegistrationInfo();
+                    const noiseKeyPair = await window
+                        .require('WAWebUserPrefsInfoStore')
+                        .waNoiseInfo.get();
+                    const staticKeyB64 = window
+                        .require('WABase64')
+                        .encodeB64(noiseKeyPair.staticKeyPair.pubKey);
+                    const identityKeyB64 = window
+                        .require('WABase64')
+                        .encodeB64(registrationInfo.identityKeyPair.pubKey);
+                    const platform = window.require(
+                        'WAWebCompanionRegClientUtils',
+                    ).DEVICE_PLATFORM;
                     const getQR = (ref) =>
                         ref +
                         ',' +
@@ -269,10 +269,14 @@ class Client extends EventEmitter {
                             .getADVSecretKey() +
                         ',' +
                         platform;
-                    window.onQRChangedEvent(getQR(window.AuthStore.Conn.ref)); // initial qr
-                    window.AuthStore.Conn.on('change:ref', (_, ref) => {
-                        window.onQRChangedEvent(getQR(ref));
-                    }); // future QR changes
+                    window.onQRChangedEvent(
+                        getQR(window.require('WAWebConnModel').Conn.ref),
+                    ); // initial qr
+                    window
+                        .require('WAWebConnModel')
+                        .Conn.on('change:ref', (_, ref) => {
+                            window.onQRChangedEvent(getQR(ref));
+                        }); // future QR changes
                 });
             }
         }
@@ -322,7 +326,7 @@ class Client extends EventEmitter {
                         await webCache.persist(this.currentIndexHtml, version);
                     }
 
-                    //Load util functions (serializers, helper functions)
+                    // Load util functions (serializers, helper functions)
                     await this.pupPage.evaluate(LoadUtils);
 
                     let start = Date.now();
@@ -410,7 +414,9 @@ class Client extends EventEmitter {
             const Cmd = window.require('WAWebCmd').Cmd;
             Cmd.on('offline_progress_update_from_bridge', () => {
                 window.onOfflineProgressUpdateEvent(
-                    window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress(),
+                    window
+                        .require('WAWebOfflineHandler')
+                        .OfflineMessageHandler.getOfflineDeliveryProgress(),
                 );
             });
             Cmd.on('logout', async () => {
@@ -526,19 +532,15 @@ class Client extends EventEmitter {
         return await this.pupPage.evaluate(
             async (phoneNumber, showNotification, intervalMs) => {
                 const getCode = async () => {
-                    while (!window.AuthStore.PairingCodeLinkUtils) {
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, 250),
-                        );
-                    }
-                    window.AuthStore.PairingCodeLinkUtils.setPairingType(
-                        'ALT_DEVICE_LINKING',
-                    );
-                    await window.AuthStore.PairingCodeLinkUtils.initializeAltDeviceLinking();
-                    return window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(
-                        phoneNumber,
-                        showNotification,
-                    );
+                    window
+                        .require('WAWebAltDeviceLinkingApi')
+                        .setPairingType('ALT_DEVICE_LINKING');
+                    await window
+                        .require('WAWebAltDeviceLinkingApi')
+                        .initializeAltDeviceLinking();
+                    return window
+                        .require('WAWebAltDeviceLinkingApi')
+                        .startAltLinkingFlow(phoneNumber, showNotification);
                 };
                 if (window.codeInterval) {
                     clearInterval(window.codeInterval); // remove existing interval
@@ -2409,7 +2411,7 @@ class Client extends EventEmitter {
                             },
                             participantWids,
                         );
-                } catch (err) {
+                } catch (ignoredError) {
                     return 'CreateGroupError: An unknown error occupied while creating a group';
                 }
 
@@ -2648,7 +2650,7 @@ class Client extends EventEmitter {
                                     meContact,
                                 ));
                     }
-                } catch (error) {
+                } catch (ignoredError) {
                     return false;
                 }
 
