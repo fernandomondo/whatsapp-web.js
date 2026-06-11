@@ -1208,7 +1208,7 @@ declare namespace WAWebJS {
         /** Indicates the duration of the message in seconds */
         duration: string;
         /** ID that represents the message */
-        id: MessageId;
+        id: MessageId | GroupMessageId,
         /** Indicates if the message was forwarded */
         isForwarded: boolean;
         /**
@@ -1385,6 +1385,11 @@ declare namespace WAWebJS {
         remote: string;
         id: string;
         _serialized: string;
+    }
+
+    export interface GroupMessageId extends MessageId {
+        /** The participant who sent the message (only present in groups) */
+        participant?: string | MessageId;
     }
 
     /** Options for sending a location */
