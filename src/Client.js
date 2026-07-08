@@ -108,6 +108,67 @@ class Client extends EventEmitter {
     }
 
     /**
+     * Sets up a CDP Virtual Authenticator for handling WebAuthn/Passkey challenges.
+     * Must be called after pupPage is created and before navigating to WhatsApp Web.
+     * @private
+     */
+    async _setupVirtualAuthenticator() {
+        try {
+            const cdpSession = await this.pupPage.createCDPSession();
+            this._cdpSession = cdpSession;
+
+            await cdpSession.send('WebAuthn.enable');
+
+            const { authenticatorId } = await cdpSession.send('WebAuthn.addVirtualAuthenticator', {
+                options: {
+                    protocol: 'ctap2',
+                    transport: 'internal',
+                    hasResidentKey: true,
+                    hasUserVerification: true,
+                    isUserVerified: true,
+                    automaticPresenceSimulation: true,
+                },
+            });
+            this._webAuthnAuthenticatorId = authenticatorId;
+
+            // Restore previously saved credentials for session restore
+            const savedCredentials = await this.authStrategy.loadWebAuthnCredentials();
+            if (savedCredentials && Array.isArray(savedCredentials)) {
+                for (const cred of savedCredentials) {
+                    await cdpSession.send('WebAuthn.addCredential', {
+                        authenticatorId,
+                        credential: cred,
+                    });
+                }
+            }
+        } catch (err) {
+            // Non-fatal: passkey support won't work but QR/pairing code flow may still succeed
+            console.warn('[whatsapp-web.js] Failed to setup virtual authenticator for passkey support:', err.message);
+        }
+    }
+
+    /**
+     * Extracts and persists WebAuthn credentials from the virtual authenticator.
+     * Called after successful authentication to enable session restore.
+     * @private
+     */
+    async _saveVirtualAuthenticatorCredentials() {
+        try {
+            if (!this._cdpSession || !this._webAuthnAuthenticatorId) return;
+
+            const { credentials } = await this._cdpSession.send('WebAuthn.getCredentials', {
+                authenticatorId: this._webAuthnAuthenticatorId,
+            });
+
+            if (credentials && credentials.length > 0) {
+                await this.authStrategy.saveWebAuthnCredentials(credentials);
+            }
+        } catch (err) {
+            console.warn('[whatsapp-web.js] Failed to save WebAuthn credentials:', err.message);
+        }
+    }
+
+    /**
      * Injection logic
      * Private function
      */
@@ -376,6 +437,7 @@ class Client extends EventEmitter {
                  * @event Client#ready
                  */
                 this.emit(Events.READY);
+                await this._saveVirtualAuthenticatorCredentials();
                 this.authStrategy.afterAuthReady();
             },
         );
@@ -481,6 +543,9 @@ class Client extends EventEmitter {
 
         this.pupBrowser = browser;
         this.pupPage = page;
+
+        // Setup CDP Virtual Authenticator for WebAuthn/Passkey support
+        await this._setupVirtualAuthenticator();
 
         await this.authStrategy.afterBrowserInitialized();
         await this.initWebVersionCache();

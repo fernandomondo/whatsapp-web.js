@@ -24,6 +24,8 @@ class BaseAuthStrategy {
     async disconnect() {}
     async destroy() {}
     async logout() {}
+    async saveWebAuthnCredentials(credentials) {}
+    async loadWebAuthnCredentials() { return null; }
 }
 
 module.exports = BaseAuthStrategy;

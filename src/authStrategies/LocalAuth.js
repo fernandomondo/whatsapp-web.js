@@ -66,6 +66,23 @@ class LocalAuth extends BaseAuthStrategy {
                 });
         }
     }
+
+    async saveWebAuthnCredentials(credentials) {
+        if (!this.userDataDir) return;
+        const filePath = path.join(this.userDataDir, 'webauthn_credentials.json');
+        await fs.promises.writeFile(filePath, JSON.stringify(credentials, null, 2), 'utf-8');
+    }
+
+    async loadWebAuthnCredentials() {
+        if (!this.userDataDir) return null;
+        const filePath = path.join(this.userDataDir, 'webauthn_credentials.json');
+        try {
+            const data = await fs.promises.readFile(filePath, 'utf-8');
+            return JSON.parse(data);
+        } catch {
+            return null;
+        }
+    }
 }
 
 module.exports = LocalAuth;
