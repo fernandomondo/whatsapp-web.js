@@ -108,11 +108,12 @@ class Client extends EventEmitter {
     }
 
     /**
-     * Sets up a CDP Virtual Authenticator for handling WebAuthn/Passkey challenges.
-     * Must be called after pupPage is created and before navigating to WhatsApp Web.
+     * Sets up a CDP Virtual Authenticator to handle WebAuthn credentials.create()
+     * automatically and credentials.get() when we have saved credentials.
+     * Must be called after pupPage is created and before _setupPasskeyBridge().
      * @private
      */
-    async _setupVirtualAuthenticator() {
+    async _setupPasskeyAuthenticator() {
         try {
             const cdpSession = await this.pupPage.createCDPSession();
             this._cdpSession = cdpSession;
@@ -131,7 +132,7 @@ class Client extends EventEmitter {
             });
             this._webAuthnAuthenticatorId = authenticatorId;
 
-            // Restore previously saved credentials for session restore
+            // Load previously saved credentials so credentials.get() works on re-pair
             const savedCredentials = await this.authStrategy.loadWebAuthnCredentials();
             if (savedCredentials && Array.isArray(savedCredentials)) {
                 for (const cred of savedCredentials) {
@@ -142,17 +143,167 @@ class Client extends EventEmitter {
                 }
             }
         } catch (err) {
-            // Non-fatal: passkey support won't work but QR/pairing code flow may still succeed
-            console.warn('[whatsapp-web.js] Failed to setup virtual authenticator for passkey support:', err.message);
+            console.warn('[whatsapp-web.js] Failed to setup virtual authenticator:', err.message);
         }
     }
 
     /**
-     * Extracts and persists WebAuthn credentials from the virtual authenticator.
-     * Called after successful authentication to enable session restore.
+     * Overrides navigator.credentials.get() to first try the virtual authenticator,
+     * then fall back to the bridge if the virtual authenticator can't handle it
+     * (e.g. user has a phone passkey we don't have).
+     * credentials.create() is NOT overridden — the virtual authenticator handles it natively.
      * @private
      */
-    async _saveVirtualAuthenticatorCredentials() {
+    async _setupPasskeyBridge() {
+        await this.pupPage.evaluateOnNewDocument(() => {
+            window.__passkey = { resolve: null, reject: null, pendingRequest: null };
+
+            const origGet = navigator.credentials
+                ? navigator.credentials.get.bind(navigator.credentials)
+                : null;
+
+            function bufToB64url(buf) {
+                const arr = new Uint8Array(buf instanceof ArrayBuffer ? buf : (buf.buffer || buf));
+                let bin = '';
+                for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+                return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            }
+
+            function serializePublicKeyOptions(pk) {
+                return {
+                    rpId: pk.rpId,
+                    challenge: pk.challenge ? bufToB64url(pk.challenge) : null,
+                    timeout: pk.timeout,
+                    userVerification: pk.userVerification,
+                    allowCredentials: (pk.allowCredentials || []).map(c => ({
+                        type: c.type,
+                        id: c.id ? bufToB64url(c.id) : null,
+                        transports: c.transports,
+                    })),
+                    extensions: pk.extensions,
+                };
+            }
+
+            Object.defineProperty(navigator.credentials, 'get', {
+                value: async function(options) {
+                    if (!(options && options.publicKey)) {
+                        return origGet ? origGet(options) : Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
+                    }
+
+                    // Layer 1: Try the virtual authenticator (handles saved credentials)
+                    if (origGet) {
+                        try {
+                            const result = await Promise.race([
+                                origGet(options),
+                                new Promise((_, rej) => setTimeout(() => rej(new Error('__vauth_timeout')), 5000)),
+                            ]);
+                            return result;
+                        } catch (_) {
+                            // Virtual authenticator couldn't handle it — fall through to bridge
+                        }
+                    }
+
+                    // Layer 2: Bridge — forward challenge to Node.js for external handling
+                    const serialized = serializePublicKeyOptions(options.publicKey);
+
+                    if (typeof window.onPasskeyRequestEvent === 'function') {
+                        window.onPasskeyRequestEvent(JSON.stringify(serialized));
+                    } else {
+                        window.__passkey.pendingRequest = serialized;
+                    }
+
+                    return new Promise((resolve, reject) => {
+                        window.__passkey.resolve = resolve;
+                        window.__passkey.reject = reject;
+                    });
+                },
+                writable: true,
+                configurable: true,
+            });
+
+            window.__resolvePasskeyResponse = function(responseJSON) {
+                if (!window.__passkey.resolve) return false;
+
+                const data = typeof responseJSON === 'string' ? JSON.parse(responseJSON) : responseJSON;
+
+                function b64urlToBuffer(b64url) {
+                    if (!b64url) return null;
+                    const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+                    const pad = b64.length % 4;
+                    const padded = pad ? b64 + '='.repeat(4 - pad) : b64;
+                    const bin = atob(padded);
+                    const bytes = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                    return bytes.buffer;
+                }
+
+                const credential = {
+                    id: data.id,
+                    rawId: b64urlToBuffer(data.rawId || data.id),
+                    type: data.type || 'public-key',
+                    authenticatorAttachment: data.authenticatorAttachment || 'platform',
+                    response: {
+                        clientDataJSON: b64urlToBuffer(data.response.clientDataJSON),
+                        authenticatorData: b64urlToBuffer(data.response.authenticatorData),
+                        signature: b64urlToBuffer(data.response.signature),
+                        userHandle: data.response.userHandle ? b64urlToBuffer(data.response.userHandle) : null,
+                    },
+                    getClientExtensionResults: () => (data.clientExtensionResults || {}),
+                    toJSON: () => data,
+                };
+
+                window.__passkey.resolve(credential);
+                window.__passkey.resolve = null;
+                window.__passkey.reject = null;
+                return true;
+            };
+
+            window.__rejectPasskeyRequest = function(reason) {
+                if (!window.__passkey.reject) return false;
+                window.__passkey.reject(new DOMException(reason || 'Cancelled', 'NotAllowedError'));
+                window.__passkey.resolve = null;
+                window.__passkey.reject = null;
+                return true;
+            };
+        });
+    }
+
+    /**
+     * Sets up the Node.js side of the passkey bridge in inject().
+     * Exposes the callback and flushes any pending request.
+     * @private
+     */
+    async _attachPasskeyListeners() {
+        await exposeFunctionIfAbsent(
+            this.pupPage,
+            'onPasskeyRequestEvent',
+            async (optionsJSON) => {
+                /**
+                 * Emitted when WhatsApp requests passkey authentication (SHORTCAKE flow)
+                 * and the virtual authenticator could not handle it.
+                 * The listener receives the PublicKeyCredentialRequestOptions as a JSON object.
+                 * Respond with {@link Client#sendPasskeyResponse}.
+                 * @event Client#passkey_request
+                 */
+                this.emit(Events.PASSKEY_REQUEST, JSON.parse(optionsJSON));
+            },
+        );
+
+        // Flush any request that arrived before inject() ran
+        await this.pupPage.evaluate(() => {
+            if (window.__passkey && window.__passkey.pendingRequest) {
+                window.onPasskeyRequestEvent(JSON.stringify(window.__passkey.pendingRequest));
+                window.__passkey.pendingRequest = null;
+            }
+        });
+    }
+
+    /**
+     * Extracts credentials from the virtual authenticator and persists them
+     * so they survive browser restarts.
+     * @private
+     */
+    async _savePasskeyCredentials() {
         try {
             if (!this._cdpSession || !this._webAuthnAuthenticatorId) return;
 
@@ -166,6 +317,29 @@ class Client extends EventEmitter {
         } catch (err) {
             console.warn('[whatsapp-web.js] Failed to save WebAuthn credentials:', err.message);
         }
+    }
+
+    /**
+     * Sends a WebAuthn assertion response to fulfill a pending passkey challenge.
+     * Only needed when the virtual authenticator couldn't handle the request.
+     * The response must match the PublicKeyCredential.toJSON() format:
+     * { id, rawId, type, response: { clientDataJSON, authenticatorData, signature, userHandle } }
+     * All binary fields must be base64url-encoded strings.
+     * @param {object|string} response - The WebAuthn assertion response (JSON object or stringified)
+     * @returns {Promise<boolean>} - Whether the response was accepted
+     */
+    async sendPasskeyResponse(response) {
+        const json = typeof response === 'string' ? response : JSON.stringify(response);
+        return await this.pupPage.evaluate((j) => window.__resolvePasskeyResponse(j), json);
+    }
+
+    /**
+     * Rejects a pending passkey challenge.
+     * @param {string} [reason] - Optional rejection reason
+     * @returns {Promise<boolean>} - Whether there was a pending request to reject
+     */
+    async rejectPasskeyRequest(reason) {
+        return await this.pupPage.evaluate((r) => window.__rejectPasskeyRequest(r), reason);
     }
 
     /**
@@ -437,7 +611,7 @@ class Client extends EventEmitter {
                  * @event Client#ready
                  */
                 this.emit(Events.READY);
-                await this._saveVirtualAuthenticatorCredentials();
+                await this._savePasskeyCredentials();
                 this.authStrategy.afterAuthReady();
             },
         );
@@ -462,6 +636,9 @@ class Client extends EventEmitter {
                     .catch((_) => _);
             },
         );
+        // Attach passkey bridge listeners (SHORTCAKE flow)
+        await this._attachPasskeyListeners();
+
         await this.pupPage.evaluate(() => {
             window
                 .require('WAWebSocketModel')
@@ -544,8 +721,11 @@ class Client extends EventEmitter {
         this.pupBrowser = browser;
         this.pupPage = page;
 
-        // Setup CDP Virtual Authenticator for WebAuthn/Passkey support
-        await this._setupVirtualAuthenticator();
+        // Setup passkey support (SHORTCAKE flow) — must run before page.goto()
+        // Layer 1: CDP Virtual Authenticator handles create() and get() with saved creds
+        // Layer 2: Bridge override of get() falls back to event emission
+        await this._setupPasskeyAuthenticator();
+        await this._setupPasskeyBridge();
 
         await this.authStrategy.afterBrowserInitialized();
         await this.initWebVersionCache();
