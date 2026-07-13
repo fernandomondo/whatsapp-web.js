@@ -200,6 +200,12 @@ declare namespace WAWebJS {
         /** Cancels an active pairing code session and returns to QR code mode */
         cancelPairingCode(): Promise<void>
 
+        /** Sends a WebAuthn assertion response to fulfill a pending passkey challenge */
+        sendPasskeyResponse(response: object | string): Promise<boolean>;
+
+        /** Rejects a pending passkey challenge */
+        rejectPasskeyRequest(reason?: string): Promise<boolean>;
+
         /** Force reset of connection state for the client */
         resetState(): Promise<void>;
 
@@ -661,6 +667,9 @@ declare namespace WAWebJS {
          * shows a user's current selected option(s) on the poll
          */
         on(event: 'vote_update', listener: (vote: PollVote) => void): this;
+
+        /** Emitted when WhatsApp requests passkey authentication and the virtual authenticator could not handle it */
+        on(event: 'passkey_request', listener: (options: object) => void): this;
     }
 
     /** Current connection information */
@@ -1039,6 +1048,7 @@ declare namespace WAWebJS {
         REMOTE_SESSION_SAVED = 'remote_session_saved',
         INCOMING_CALL = 'call',
         VOTE_UPDATE = 'vote_update',
+        PASSKEY_REQUEST = 'passkey_request',
     }
 
     /** Group notification types */
