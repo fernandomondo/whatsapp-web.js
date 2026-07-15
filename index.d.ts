@@ -212,10 +212,7 @@ declare namespace WAWebJS {
         ): Promise<Message>;
 
         /** Send a reaction to a specific messageId */
-        sendReaction(
-            messageId: string,
-            reaction: string,
-        ): Promise<void>;
+        sendReaction(messageId: string, reaction: string): Promise<void>;
 
         /** Sends a channel admin invitation to a user, allowing them to become an admin of the channel */
         sendChannelAdminInvite(
@@ -1209,7 +1206,7 @@ declare namespace WAWebJS {
         /** Indicates the duration of the message in seconds */
         duration: string;
         /** ID that represents the message */
-        id: MessageId;
+        id: MessageId | GroupMessageId,
         /** Indicates if the message was forwarded */
         isForwarded: boolean;
         /**
@@ -1390,6 +1387,11 @@ declare namespace WAWebJS {
         remote: string;
         id: string;
         _serialized: string;
+    }
+
+    export interface GroupMessageId extends MessageId {
+        /** The participant who sent the message (only present in groups) */
+        participant?: string | MessageId;
     }
 
     /** Options for sending a location */

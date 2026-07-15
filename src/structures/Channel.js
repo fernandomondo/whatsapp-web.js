@@ -29,7 +29,7 @@ class Channel extends Base {
          * ID that represents the channel
          * @type {ChannelId}
          */
-        this.id = data.id;
+        this.id = Base._normalizeId(data.id);
 
         /**
          * Title of the channel
@@ -397,14 +397,14 @@ class Channel extends Base {
                 if (property.editPicture) {
                     value.picture = value.picture
                         ? await window.WWebJS.cropAndResizeImage(
-                              value.picture,
-                              {
-                                  asDataUrl: true,
-                                  mimetype: 'image/jpeg',
-                                  size: 640,
-                                  quality: 1,
-                              },
-                          )
+                            value.picture,
+                            {
+                                asDataUrl: true,
+                                mimetype: 'image/jpeg',
+                                size: 640,
+                                quality: 1,
+                            },
+                        )
                         : null;
                 }
                 try {
@@ -443,11 +443,11 @@ class Channel extends Base {
                             muteExpirationValue:
                                 action === 'MUTE'
                                     ? window.require(
-                                          'WAWebNewsletterModelUtils',
-                                      ).MUTED_STATE
+                                        'WAWebNewsletterModelUtils',
+                                    ).MUTED_STATE
                                     : window.require(
-                                          'WAWebNewsletterModelUtils',
-                                      ).UNMUTED_STATE,
+                                        'WAWebNewsletterModelUtils',
+                                    ).UNMUTED_STATE,
                         });
                     return true;
                 } catch (err) {
