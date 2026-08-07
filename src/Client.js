@@ -280,7 +280,7 @@ class Client extends EventEmitter {
                     ) {
                         // refresh qr code
                         await this.pupPage.evaluate(() => {
-                            window.require('WAWebCmd').Cmd.refreshQR();
+                            window.require('WAWebLaunchSocketUtils').refreshQR();
                         });
                     }
                 },
