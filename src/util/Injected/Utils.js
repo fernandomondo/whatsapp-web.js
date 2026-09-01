@@ -184,6 +184,15 @@ exports.LoadUtils = () => {
                         .require('WAWebCollections')
                         .Msg.getMessagesById([options.quotedMessageId])
                 )?.messages?.[0]);
+
+            // Fallback: search by short ID in the chat's loaded messages
+            // Needed when the store indexes by LID but the quotedMessageId is phone-based
+            if (!quotedMessage && options.quotedMessageId.includes('_')) {
+                const shortId = options.quotedMessageId.split('_').pop();
+                const msgs = chat.msgs?.getModelsArray?.() ?? [];
+                quotedMessage = msgs.find(m => m.id?.id === shortId);
+            }
+
             if (quotedMessage) {
                 const ReplyUtils = window.require('WAWebMsgReply');
                 const canReply = ReplyUtils
@@ -192,6 +201,12 @@ exports.LoadUtils = () => {
 
                 if (canReply) {
                     quotedMsgOptions = quotedMessage.msgContextInfo(chat);
+
+                    // In 1:1 chats, quotedRemoteJid must be null (native behavior).
+                    // msgContextInfo() returns LID-based JID which breaks click navigation.
+                    if (typeof chat.id?.isGroup === 'function' && !chat.id.isGroup()) {
+                        delete quotedMsgOptions.quotedRemoteJid;
+                    }
                 }
             } else {
                 if (!options.ignoreQuoteErrors) {
@@ -876,6 +891,26 @@ exports.LoadUtils = () => {
                         .require('WAWebFindChatAction')
                         .findOrCreateLatestChat(chatWid)
                 )?.chat;
+
+            // Fallback: resolve phone @c.us to @lid and retry
+            if (!chat && !chatWid.isLid()) {
+                try {
+                    const result = await window
+                        .require('WAWebQueryExistsJob')
+                        .queryWidExists(chatWid);
+                    if (result?.wid) {
+                        chat =
+                            window.require('WAWebCollections').Chat.get(result.wid) ||
+                            (
+                                await window
+                                    .require('WAWebFindChatAction')
+                                    .findOrCreateLatestChat(result.wid)
+                            )?.chat;
+                    }
+                } catch (ignoredError) {
+                    // queryWidExists may fail for invalid numbers
+                }
+            }
         }
 
         return getAsModel && chat
