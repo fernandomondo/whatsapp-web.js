@@ -204,7 +204,10 @@ exports.LoadUtils = () => {
 
                     // In 1:1 chats, quotedRemoteJid must be null (native behavior).
                     // msgContextInfo() returns LID-based JID which breaks click navigation.
-                    if (typeof chat.id?.isGroup === 'function' && !chat.id.isGroup()) {
+                    // Use _serialized string check — isGroup() may behave differently
+                    // across WhatsApp Web builds (method vs property, different return values).
+                    const chatIdStr = chat.id?._serialized || '';
+                    if (!chatIdStr.endsWith('@g.us')) {
                         delete quotedMsgOptions.quotedRemoteJid;
                     }
                 }
@@ -441,7 +444,8 @@ exports.LoadUtils = () => {
         let from = chat.id.isLid() ? lidUser : meUser;
         let participant;
 
-        if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
+        const chatIdSerialized = chat.id?._serialized || '';
+        if (chatIdSerialized.endsWith('@g.us')) {
             from =
                 chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
                     ? lidUser
