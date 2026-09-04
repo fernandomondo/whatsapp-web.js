@@ -19,7 +19,7 @@ class Chat extends Base {
          * ID that represents the chat
          * @type {object}
          */
-        this.id = data.id;
+        this.id = Base._normalizeId(data.id);
 
         /**
          * Title of the chat
@@ -245,6 +245,7 @@ class Chat extends Base {
 
         return messages.map((m) => new Message(this.client, m));
     }
+
 
     /**
      * Simulate typing in chat. This will last for 25 seconds.
