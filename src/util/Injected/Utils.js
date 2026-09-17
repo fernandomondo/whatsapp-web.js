@@ -502,6 +502,11 @@ exports.LoadUtils = () => {
             ...extraOptions,
         };
 
+        // MediaData is a model whose private __x_id field gets spread in above,
+        // colliding with the Msg's internal id and breaking getValidatedSender()
+        // during Msg initialization (WWeb 2.3000.1047775310+).
+        delete message.__x_id;
+
         // Bot's won't reply if canonicalUrl is set (linking)
         if (botOptions) {
             delete message.canonicalUrl;
