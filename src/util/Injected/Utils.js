@@ -1355,9 +1355,10 @@ exports.LoadUtils = () => {
 
     window.WWebJS.getOrderDetail = async (orderId, token, chatId) => {
         const chatWid = window.require('WAWebWidFactory').createWid(chatId);
+        // queryOrder takes a single options object; positional args leave bizJid undefined and throw.
         return window
             .require('WAWebBizOrderBridge')
-            .queryOrder(chatWid, orderId, 80, 80, token);
+            .queryOrder({ bizJid: chatWid, orderId, token, width: 80, height: 80 });
     };
 
     window.WWebJS.getProductMetadata = async (productId) => {
