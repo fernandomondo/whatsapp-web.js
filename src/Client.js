@@ -122,6 +122,7 @@ class Client extends EventEmitter {
             await this.pupPage
                 .waitForFunction('window.Debug?.VERSION != undefined', {
                     timeout: authTimeout,
+                    polling: 200,
                     signal: abort.signal,
                 })
                 .catch((err) => {
@@ -153,7 +154,7 @@ class Client extends EventEmitter {
                         state,
                     };
                 },
-                { timeout: authTimeout },
+                { timeout: authTimeout, polling: 200 },
             );
             const needAuthentication = await needAuthHandle.jsonValue();
 
@@ -280,7 +281,7 @@ class Client extends EventEmitter {
                     ) {
                         // refresh qr code
                         await this.pupPage.evaluate(() => {
-                            window.require('WAWebCmd').Cmd.refreshQR();
+                            window.require('WAWebLaunchSocketUtils').refreshQR();
                         });
                     }
                 },
@@ -326,7 +327,7 @@ class Client extends EventEmitter {
                         await this.pupPage
                             .waitForFunction(
                                 'typeof window.WWebJS !== "undefined"',
-                                { timeout: 30000 },
+                                { timeout: 30000, polling: 200 },
                             )
                             .catch(() => {
                                 throw 'ready timeout';
