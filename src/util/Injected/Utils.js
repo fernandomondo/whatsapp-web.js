@@ -43,14 +43,14 @@ exports.LoadUtils = () => {
         return operator === '>'
             ? lOperand > rOperand
             : operator === '>='
-              ? lOperand >= rOperand
-              : operator === '<'
-                ? lOperand < rOperand
-                : operator === '<='
-                  ? lOperand <= rOperand
-                  : operator === '='
-                    ? lOperand === rOperand
-                    : false;
+                ? lOperand >= rOperand
+                : operator === '<'
+                    ? lOperand < rOperand
+                    : operator === '<='
+                        ? lOperand <= rOperand
+                        : operator === '='
+                            ? lOperand === rOperand
+                            : false;
     };
 
     /**
@@ -156,14 +156,14 @@ exports.LoadUtils = () => {
                 options.sendMediaAsSticker && !isChannel && !isStatus
                     ? await window.WWebJS.processStickerData(options.media)
                     : await window.WWebJS.processMediaData(options.media, {
-                          forceSticker: options.sendMediaAsSticker,
-                          forceGif: options.sendVideoAsGif,
-                          forceVoice: options.sendAudioAsVoice,
-                          forceDocument: options.sendMediaAsDocument,
-                          forceMediaHd: options.sendMediaAsHd,
-                          sendToChannel: isChannel,
-                          sendToStatus: isStatus,
-                      });
+                        forceSticker: options.sendMediaAsSticker,
+                        forceGif: options.sendVideoAsGif,
+                        forceVoice: options.sendAudioAsVoice,
+                        forceDocument: options.sendMediaAsDocument,
+                        forceMediaHd: options.sendMediaAsHd,
+                        sendToChannel: isChannel,
+                        sendToStatus: isStatus,
+                    });
             mediaOptions.caption = options.caption;
             content = options.sendMediaAsSticker
                 ? undefined
@@ -184,6 +184,15 @@ exports.LoadUtils = () => {
                         .require('WAWebCollections')
                         .Msg.getMessagesById([options.quotedMessageId])
                 )?.messages?.[0]);
+
+            // Fallback: search by short ID in the chat's loaded messages
+            // Needed when the store indexes by LID but the quotedMessageId is phone-based
+            if (!quotedMessage && options.quotedMessageId.includes('_')) {
+                const shortId = options.quotedMessageId.split('_').pop();
+                const msgs = chat.msgs?.getModelsArray?.() ?? [];
+                quotedMessage = msgs.find(m => m.id?.id === shortId);
+            }
+
             if (quotedMessage) {
                 const ReplyUtils = window.require('WAWebMsgReply');
                 const canReply = ReplyUtils
@@ -192,6 +201,15 @@ exports.LoadUtils = () => {
 
                 if (canReply) {
                     quotedMsgOptions = quotedMessage.msgContextInfo(chat);
+
+                    // In 1:1 chats, quotedRemoteJid must be null (native behavior).
+                    // msgContextInfo() returns LID-based JID which breaks click navigation.
+                    // Use _serialized string check — isGroup() may behave differently
+                    // across WhatsApp Web builds (method vs property, different return values).
+                    const chatIdStr = chat.id?._serialized || '';
+                    if (!chatIdStr.endsWith('@g.us')) {
+                        delete quotedMsgOptions.quotedRemoteJid;
+                    }
                 }
             } else {
                 if (!options.ignoreQuoteErrors) {
@@ -270,11 +288,11 @@ exports.LoadUtils = () => {
                     eventSendOptions.callType === 'none'
                         ? null
                         : await window
-                              .require('WAWebGenerateEventCallLink')
-                              .createEventCallLink(
-                                  startTimeTs,
-                                  eventSendOptions.callType,
-                              ),
+                            .require('WAWebGenerateEventCallLink')
+                            .createEventCallLink(
+                                startTimeTs,
+                                eventSendOptions.callType,
+                            ),
                 isEventCanceled: eventSendOptions.isEventCanceled,
                 messageSecret:
                     Array.isArray(messageSecret) && messageSecret.length === 32
@@ -426,7 +444,8 @@ exports.LoadUtils = () => {
         let from = chat.id.isLid() ? lidUser : meUser;
         let participant;
 
-        if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
+        const chatIdSerialized = chat.id?._serialized || '';
+        if (chatIdSerialized.endsWith('@g.us')) {
             from =
                 chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
                     ? lidUser
@@ -516,16 +535,16 @@ exports.LoadUtils = () => {
                         message.type === 'chat'
                             ? 'text'
                             : isMedia
-                              ? 'media'
-                              : 'pollCreation',
+                                ? 'media'
+                                : 'pollCreation',
                     newsletterJid: chat.id.toJid(),
                     ...(isMedia
                         ? {
-                              mediaMetadata: msg.avParams(),
-                              mediaHandle: isMedia
-                                  ? mediaOptions.mediaHandle
-                                  : null,
-                          }
+                            mediaMetadata: msg.avParams(),
+                            mediaHandle: isMedia
+                                ? mediaOptions.mediaHandle
+                                : null,
+                        }
                         : {}),
                 });
 
@@ -570,11 +589,11 @@ exports.LoadUtils = () => {
 
             await window
                 .require('WAWebSendStatusMsgAction')
-                [
-                    isMedia
-                        ? 'sendStatusMediaMsgAction'
-                        : 'sendStatusTextMsgAction'
-                ](...(isMedia ? [msg, mediaUpdate] : [statusOptions]));
+            [
+                isMedia
+                    ? 'sendStatusMediaMsgAction'
+                    : 'sendStatusTextMsgAction'
+            ](...(isMedia ? [msg, mediaUpdate] : [statusOptions]));
 
             return msg;
         }
@@ -772,9 +791,9 @@ exports.LoadUtils = () => {
             mediaType,
             ...(sendToChannel
                 ? {
-                      calculateToken: window.require('WAMediaCalculateFilehash')
-                          .getRandomFilehash,
-                  }
+                    calculateToken: window.require('WAMediaCalculateFilehash')
+                        .getRandomFilehash,
+                }
                 : {}),
         };
 
@@ -882,6 +901,26 @@ exports.LoadUtils = () => {
                         .require('WAWebFindChatAction')
                         .findOrCreateLatestChat(chatWid)
                 )?.chat;
+
+            // Fallback: resolve phone @c.us to @lid and retry
+            if (!chat && !chatWid.isLid()) {
+                try {
+                    const result = await window
+                        .require('WAWebQueryExistsJob')
+                        .queryWidExists(chatWid);
+                    if (result?.wid) {
+                        chat =
+                            window.require('WAWebCollections').Chat.get(result.wid) ||
+                            (
+                                await window
+                                    .require('WAWebFindChatAction')
+                                    .findOrCreateLatestChat(result.wid)
+                            )?.chat;
+                    }
+                } catch (ignoredError) {
+                    // queryWidExists may fail for invalid numbers
+                }
+            }
         }
 
         return getAsModel && chat
@@ -1097,7 +1136,7 @@ exports.LoadUtils = () => {
                     await window
                         .require('WAWebCollections')
                         .BusinessProfile.find(contact.id)
-                        .catch(() => {});
+                        .catch(() => { });
                 }
                 return window.WWebJS.getContactModel(contact);
             }),
@@ -1642,11 +1681,11 @@ exports.LoadUtils = () => {
                         const [_] = value.participant.map((p) => {
                             const error = toApprove
                                 ? value.participant[0]
-                                      .membershipRequestsActionAcceptParticipantMixins
-                                      ?.value.error
+                                    .membershipRequestsActionAcceptParticipantMixins
+                                    ?.value.error
                                 : value.participant[0]
-                                      .membershipRequestsActionRejectParticipantMixins
-                                      ?.value.error;
+                                    .membershipRequestsActionRejectParticipantMixins
+                                    ?.value.error;
                             return {
                                 requesterId: (() => {
                                     const _w = window
@@ -1656,14 +1695,14 @@ exports.LoadUtils = () => {
                                 })(),
                                 ...(error
                                     ? {
-                                          error: +error,
-                                          message:
-                                              membReqResCodes[error] ||
-                                              membReqResCodes.default,
-                                      }
+                                        error: +error,
+                                        message:
+                                            membReqResCodes[error] ||
+                                            membReqResCodes.default,
+                                    }
                                     : {
-                                          message: `${toApprove ? 'Approved' : 'Rejected'} successfully`,
-                                      }),
+                                        message: `${toApprove ? 'Approved' : 'Rejected'} successfully`,
+                                    }),
                             };
                         });
                         _ && result.push(_);
@@ -1686,7 +1725,7 @@ exports.LoadUtils = () => {
                 sleep &&
                     participantArgs.length > 1 &&
                     participantArgs.indexOf(participant) !==
-                        participantArgs.length - 1 &&
+                    participantArgs.length - 1 &&
                     (await new Promise((resolve) =>
                         setTimeout(resolve, _getSleepTime(sleep)),
                     ));
