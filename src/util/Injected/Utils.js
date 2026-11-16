@@ -706,6 +706,29 @@ exports.LoadUtils = () => {
         return stickerInfo;
     };
 
+    // WhatsApp Web only remuxes an HEVC video when the browser plays HEVC; otherwise it transcodes it, which fails where there is no
+    // HEVC decoder (Chromium on Linux without a GPU). WhatsApp accepts HEVC as is, so the check reports support while a video is prepared.
+    // Scoped to the prep: the same check also picks which variant of a received video to download.
+    window.WWebJS.withHevcSupport = async (enabled, prepare) => {
+        let hevcSupport;
+        try {
+            hevcSupport = enabled
+                ? window.require('WAWebMediaHevcSupport')
+                : null;
+        } catch {
+            hevcSupport = null;
+        }
+        const browserSupportsHEVC = hevcSupport?.browserSupportsHEVC;
+        if (typeof browserSupportsHEVC !== 'function') return await prepare();
+
+        hevcSupport.browserSupportsHEVC = () => true;
+        try {
+            return await prepare();
+        } finally {
+            hevcSupport.browserSupportsHEVC = browserSupportsHEVC;
+        }
+    };
+
     window.WWebJS.processMediaData = async (
         mediaInfo,
         {
@@ -735,10 +758,14 @@ exports.LoadUtils = () => {
             mediaParams.maxDimension = 2560;
         }
 
-        const mediaPrep = window
-            .require('WAWebPrepRawMedia')
-            .prepRawMedia(opaqueData, mediaParams);
-        const mediaData = await mediaPrep.waitForPrep();
+        const mediaData = await window.WWebJS.withHevcSupport(
+            file.type.indexOf('video/') === 0,
+            () =>
+                window
+                    .require('WAWebPrepRawMedia')
+                    .prepRawMedia(opaqueData, mediaParams)
+                    .waitForPrep(),
+        );
         const mediaObject = window
             .require('WAWebMediaStorage')
             .getOrCreateMediaObject(mediaData.filehash);
