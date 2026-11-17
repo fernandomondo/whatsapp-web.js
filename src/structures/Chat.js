@@ -246,6 +246,7 @@ class Chat extends Base {
         return messages.map((m) => new Message(this.client, m));
     }
 
+
     /**
      * Simulate typing in chat. This will last for 25 seconds.
      */

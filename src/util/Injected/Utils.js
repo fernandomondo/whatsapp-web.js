@@ -43,14 +43,14 @@ exports.LoadUtils = () => {
         return operator === '>'
             ? lOperand > rOperand
             : operator === '>='
-              ? lOperand >= rOperand
-              : operator === '<'
-                ? lOperand < rOperand
-                : operator === '<='
-                  ? lOperand <= rOperand
-                  : operator === '='
-                    ? lOperand === rOperand
-                    : false;
+                ? lOperand >= rOperand
+                : operator === '<'
+                    ? lOperand < rOperand
+                    : operator === '<='
+                        ? lOperand <= rOperand
+                        : operator === '='
+                            ? lOperand === rOperand
+                            : false;
     };
 
     /**
@@ -156,14 +156,15 @@ exports.LoadUtils = () => {
                 options.sendMediaAsSticker && !isChannel && !isStatus
                     ? await window.WWebJS.processStickerData(options.media)
                     : await window.WWebJS.processMediaData(options.media, {
-                          forceSticker: options.sendMediaAsSticker,
-                          forceGif: options.sendVideoAsGif,
-                          forceVoice: options.sendAudioAsVoice,
-                          forceDocument: options.sendMediaAsDocument,
-                          forceMediaHd: options.sendMediaAsHd,
-                          sendToChannel: isChannel,
-                          sendToStatus: isStatus,
-                      });
+                        forceSticker: options.sendMediaAsSticker,
+                        forceGif: options.sendVideoAsGif,
+                        forceVoice: options.sendAudioAsVoice,
+                        forceDocument: options.sendMediaAsDocument,
+                        forceMediaHd: options.sendMediaAsHd,
+                        videoThumbnail: options.videoThumbnail,
+                        sendToChannel: isChannel,
+                        sendToStatus: isStatus,
+                    });
             mediaOptions.caption = options.caption;
             content = options.sendMediaAsSticker
                 ? undefined
@@ -171,6 +172,7 @@ exports.LoadUtils = () => {
             mediaOptions.isViewOnce = options.isViewOnce;
             delete options.media;
             delete options.sendMediaAsSticker;
+            delete options.videoThumbnail;
         }
 
         let quotedMsgOptions = {};
@@ -184,6 +186,15 @@ exports.LoadUtils = () => {
                         .require('WAWebCollections')
                         .Msg.getMessagesById([options.quotedMessageId])
                 )?.messages?.[0]);
+
+            // Fallback: search by short ID in the chat's loaded messages
+            // Needed when the store indexes by LID but the quotedMessageId is phone-based
+            if (!quotedMessage && options.quotedMessageId.includes('_')) {
+                const shortId = options.quotedMessageId.split('_').pop();
+                const msgs = chat.msgs?.getModelsArray?.() ?? [];
+                quotedMessage = msgs.find(m => m.id?.id === shortId);
+            }
+
             if (quotedMessage) {
                 const ReplyUtils = window.require('WAWebMsgReply');
                 const canReply = ReplyUtils
@@ -192,6 +203,15 @@ exports.LoadUtils = () => {
 
                 if (canReply) {
                     quotedMsgOptions = quotedMessage.msgContextInfo(chat);
+
+                    // In 1:1 chats, quotedRemoteJid must be null (native behavior).
+                    // msgContextInfo() returns LID-based JID which breaks click navigation.
+                    // Use _serialized string check — isGroup() may behave differently
+                    // across WhatsApp Web builds (method vs property, different return values).
+                    const chatIdStr = chat.id?._serialized || '';
+                    if (!chatIdStr.endsWith('@g.us')) {
+                        delete quotedMsgOptions.quotedRemoteJid;
+                    }
                 }
             } else {
                 if (!options.ignoreQuoteErrors) {
@@ -270,11 +290,11 @@ exports.LoadUtils = () => {
                     eventSendOptions.callType === 'none'
                         ? null
                         : await window
-                              .require('WAWebGenerateEventCallLink')
-                              .createEventCallLink(
-                                  startTimeTs,
-                                  eventSendOptions.callType,
-                              ),
+                            .require('WAWebGenerateEventCallLink')
+                            .createEventCallLink(
+                                startTimeTs,
+                                eventSendOptions.callType,
+                            ),
                 isEventCanceled: eventSendOptions.isEventCanceled,
                 messageSecret:
                     Array.isArray(messageSecret) && messageSecret.length === 32
@@ -426,7 +446,8 @@ exports.LoadUtils = () => {
         let from = chat.id.isLid() ? lidUser : meUser;
         let participant;
 
-        if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
+        const chatIdSerialized = chat.id?._serialized || '';
+        if (chatIdSerialized.endsWith('@g.us')) {
             from =
                 chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
                     ? lidUser
@@ -483,12 +504,11 @@ exports.LoadUtils = () => {
             ...extraOptions,
         };
 
-        // MediaData is a model whose private __x_id field collides with Msg's
-        // internal id field when its enumerable properties are spread above,
-        // breaking getValidatedSender() during Msg initialization.
-        if (message.__x_id) {
-            delete message.__x_id;
-        }
+        // MediaData is a model whose private __x_id field gets spread in above,
+        // colliding with the Msg's internal id and breaking getValidatedSender()
+        // during Msg initialization (WWeb 2.3000.1047775310+).
+        delete message.__x_id;
+
         // Bot's won't reply if canonicalUrl is set (linking)
         if (botOptions) {
             delete message.canonicalUrl;
@@ -516,16 +536,16 @@ exports.LoadUtils = () => {
                         message.type === 'chat'
                             ? 'text'
                             : isMedia
-                              ? 'media'
-                              : 'pollCreation',
+                                ? 'media'
+                                : 'pollCreation',
                     newsletterJid: chat.id.toJid(),
                     ...(isMedia
                         ? {
-                              mediaMetadata: msg.avParams(),
-                              mediaHandle: isMedia
-                                  ? mediaOptions.mediaHandle
-                                  : null,
-                          }
+                            mediaMetadata: msg.avParams(),
+                            mediaHandle: isMedia
+                                ? mediaOptions.mediaHandle
+                                : null,
+                        }
                         : {}),
                 });
 
@@ -570,11 +590,11 @@ exports.LoadUtils = () => {
 
             await window
                 .require('WAWebSendStatusMsgAction')
-                [
-                    isMedia
-                        ? 'sendStatusMediaMsgAction'
-                        : 'sendStatusTextMsgAction'
-                ](...(isMedia ? [msg, mediaUpdate] : [statusOptions]));
+            [
+                isMedia
+                    ? 'sendStatusMediaMsgAction'
+                    : 'sendStatusTextMsgAction'
+            ](...(isMedia ? [msg, mediaUpdate] : [statusOptions]));
 
             return msg;
         }
@@ -688,6 +708,109 @@ exports.LoadUtils = () => {
         return stickerInfo;
     };
 
+    // Where the browser has no HEVC decoder (Chromium on Linux without a GPU), WhatsApp Web cannot prepare an HEVC video: it transcodes
+    // it when the browser does not play HEVC, and loads it in a <video> for its size and thumbnail. WhatsApp accepts HEVC as is, so the
+    // size and duration come from the MP4 boxes instead, with a blank thumbnail. Null for any other video, or where HEVC decodes.
+    window.WWebJS.readUndecodableHevc = async (file) => {
+        if (
+            file.type.indexOf('video/') !== 0 ||
+            document
+                .createElement('video')
+                .canPlayType('video/mp4; codecs="hvc1"') === 'probably'
+        )
+            return null;
+
+        const view = new DataView(await file.arrayBuffer());
+        const fourcc = (at) =>
+            String.fromCharCode(
+                view.getUint8(at),
+                view.getUint8(at + 1),
+                view.getUint8(at + 2),
+                view.getUint8(at + 3),
+            );
+        const boxes = (start, end) => {
+            const list = [];
+            for (let at = start; at + 8 <= end; ) {
+                let size = view.getUint32(at);
+                let header = 8;
+                if (size === 1) {
+                    size = Number(view.getBigUint64(at + 8));
+                    header = 16;
+                } else if (size === 0) {
+                    size = end - at;
+                }
+                if (size < header || at + size > end) break;
+                list.push({ type: fourcc(at + 4), start: at + header, end: at + size });
+                at += size;
+            }
+            return list;
+        };
+        const child = (box, type) =>
+            box && boxes(box.start, box.end).find((b) => b.type === type);
+
+        const moov = child({ start: 0, end: view.byteLength }, 'moov');
+        const trak = moov && boxes(moov.start, moov.end).find((b) => {
+            const hdlr = b.type === 'trak' && child(child(b, 'mdia'), 'hdlr');
+            return hdlr && fourcc(hdlr.start + 8) === 'vide';
+        });
+        const mdia = child(trak, 'mdia');
+        const stsd = child(child(child(mdia, 'minf'), 'stbl'), 'stsd');
+        const tkhd = child(trak, 'tkhd');
+        const mdhd = child(mdia, 'mdhd');
+        if (!stsd || !tkhd || !mdhd) return null;
+        if (!['hvc1', 'hev1', 'dvh1', 'dvhe'].includes(fourcc(stsd.start + 12)))
+            return null;
+
+        const matrix = tkhd.start + (view.getUint8(tkhd.start) === 1 ? 52 : 40);
+        const width = Math.round(view.getUint32(matrix + 36) / 65536);
+        const height = Math.round(view.getUint32(matrix + 40) / 65536);
+        const turned = view.getInt32(matrix) === 0;
+        const v1 = view.getUint8(mdhd.start) === 1;
+        const timescale = view.getUint32(mdhd.start + (v1 ? 20 : 12));
+        const duration = v1
+            ? Number(view.getBigUint64(mdhd.start + 24))
+            : view.getUint32(mdhd.start + 16);
+        if (!width || !height || !timescale) return null;
+
+        const fullWidth = turned ? height : width;
+        const fullHeight = turned ? width : height;
+        const scale = 100 / Math.max(fullWidth, fullHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(fullWidth * scale));
+        canvas.height = Math.max(1, Math.round(fullHeight * scale));
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#202c33';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        return {
+            fullWidth,
+            fullHeight,
+            // Whole seconds: WhatsApp Web types it as an integer (VideoTranscoderWamEvent.sourceDuration)
+            duration: Math.max(1, Math.round(duration / timescale)),
+            preview: canvas.toDataURL('image/jpeg').split(',')[1],
+        };
+    };
+
+    // Scoped to the prep: the same check also picks which variant of a received video to download
+    window.WWebJS.withHevcSupport = async (enabled, prepare) => {
+        let hevcSupport;
+        try {
+            hevcSupport = enabled
+                ? window.require('WAWebMediaHevcSupport')
+                : null;
+        } catch {
+            hevcSupport = null;
+        }
+        const browserSupportsHEVC = hevcSupport?.browserSupportsHEVC;
+        if (typeof browserSupportsHEVC !== 'function') return await prepare();
+
+        hevcSupport.browserSupportsHEVC = () => true;
+        try {
+            return await prepare();
+        } finally {
+            hevcSupport.browserSupportsHEVC = browserSupportsHEVC;
+        }
+    };
+
     window.WWebJS.processMediaData = async (
         mediaInfo,
         {
@@ -696,6 +819,7 @@ exports.LoadUtils = () => {
             forceVoice,
             forceDocument,
             forceMediaHd,
+            videoThumbnail,
             sendToChannel,
             sendToStatus,
         },
@@ -717,10 +841,23 @@ exports.LoadUtils = () => {
             mediaParams.maxDimension = 2560;
         }
 
-        const mediaPrep = window
-            .require('WAWebPrepRawMedia')
-            .prepRawMedia(opaqueData, mediaParams);
-        const mediaData = await mediaPrep.waitForPrep();
+        // An MP4 we cannot read goes the regular way instead of failing a send that works today
+        const undecodableHevc = forceDocument
+            ? null
+            : await window.WWebJS.readUndecodableHevc(file).catch(() => null);
+        if (undecodableHevc) {
+            if (videoThumbnail) undecodableHevc.preview = videoThumbnail;
+            mediaParams.precomputedFields = undecodableHevc;
+        }
+
+        const mediaData = await window.WWebJS.withHevcSupport(
+            undecodableHevc !== null,
+            () =>
+                window
+                    .require('WAWebPrepRawMedia')
+                    .prepRawMedia(opaqueData, mediaParams)
+                    .waitForPrep(),
+        );
         const mediaObject = window
             .require('WAWebMediaStorage')
             .getOrCreateMediaObject(mediaData.filehash);
@@ -772,9 +909,9 @@ exports.LoadUtils = () => {
             mediaType,
             ...(sendToChannel
                 ? {
-                      calculateToken: window.require('WAMediaCalculateFilehash')
-                          .getRandomFilehash,
-                  }
+                    calculateToken: window.require('WAMediaCalculateFilehash')
+                        .getRandomFilehash,
+                }
                 : {}),
         };
 
@@ -882,6 +1019,26 @@ exports.LoadUtils = () => {
                         .require('WAWebFindChatAction')
                         .findOrCreateLatestChat(chatWid)
                 )?.chat;
+
+            // Fallback: resolve phone @c.us to @lid and retry
+            if (!chat && !chatWid.isLid()) {
+                try {
+                    const result = await window
+                        .require('WAWebQueryExistsJob')
+                        .queryWidExists(chatWid);
+                    if (result?.wid) {
+                        chat =
+                            window.require('WAWebCollections').Chat.get(result.wid) ||
+                            (
+                                await window
+                                    .require('WAWebFindChatAction')
+                                    .findOrCreateLatestChat(result.wid)
+                            )?.chat;
+                    }
+                } catch (ignoredError) {
+                    // queryWidExists may fail for invalid numbers
+                }
+            }
         }
 
         return getAsModel && chat
@@ -1097,7 +1254,7 @@ exports.LoadUtils = () => {
                     await window
                         .require('WAWebCollections')
                         .BusinessProfile.find(contact.id)
-                        .catch(() => {});
+                        .catch(() => { });
                 }
                 return window.WWebJS.getContactModel(contact);
             }),
@@ -1317,9 +1474,10 @@ exports.LoadUtils = () => {
 
     window.WWebJS.getOrderDetail = async (orderId, token, chatId) => {
         const chatWid = window.require('WAWebWidFactory').createWid(chatId);
+        // queryOrder takes a single options object; positional args leave bizJid undefined and throw.
         return window
             .require('WAWebBizOrderBridge')
-            .queryOrder(chatWid, orderId, 80, 80, token);
+            .queryOrder({ bizJid: chatWid, orderId, token, width: 80, height: 80 });
     };
 
     window.WWebJS.getProductMetadata = async (productId) => {
@@ -1642,11 +1800,11 @@ exports.LoadUtils = () => {
                         const [_] = value.participant.map((p) => {
                             const error = toApprove
                                 ? value.participant[0]
-                                      .membershipRequestsActionAcceptParticipantMixins
-                                      ?.value.error
+                                    .membershipRequestsActionAcceptParticipantMixins
+                                    ?.value.error
                                 : value.participant[0]
-                                      .membershipRequestsActionRejectParticipantMixins
-                                      ?.value.error;
+                                    .membershipRequestsActionRejectParticipantMixins
+                                    ?.value.error;
                             return {
                                 requesterId: (() => {
                                     const _w = window
@@ -1656,14 +1814,14 @@ exports.LoadUtils = () => {
                                 })(),
                                 ...(error
                                     ? {
-                                          error: +error,
-                                          message:
-                                              membReqResCodes[error] ||
-                                              membReqResCodes.default,
-                                      }
+                                        error: +error,
+                                        message:
+                                            membReqResCodes[error] ||
+                                            membReqResCodes.default,
+                                    }
                                     : {
-                                          message: `${toApprove ? 'Approved' : 'Rejected'} successfully`,
-                                      }),
+                                        message: `${toApprove ? 'Approved' : 'Rejected'} successfully`,
+                                    }),
                             };
                         });
                         _ && result.push(_);
@@ -1686,7 +1844,7 @@ exports.LoadUtils = () => {
                 sleep &&
                     participantArgs.length > 1 &&
                     participantArgs.indexOf(participant) !==
-                        participantArgs.length - 1 &&
+                    participantArgs.length - 1 &&
                     (await new Promise((resolve) =>
                         setTimeout(resolve, _getSleepTime(sleep)),
                     ));

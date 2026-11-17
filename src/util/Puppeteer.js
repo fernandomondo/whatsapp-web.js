@@ -11,13 +11,29 @@
  * @param {Function} fn
  */
 async function exposeFunctionIfAbsent(page, name, fn) {
-    const exist = await page.evaluate((name) => {
-        return !!window[name];
-    }, name);
-    if (exist) {
-        return;
+    // Retry transient frame races (wwebjs#201946): WhatsApp's short-lived pdf-viewer
+    // iframe can close mid-exposeFunction ("Target closed"), killing attachEventListeners
+    // silently so `ready` never fires. Re-check window[name] each attempt, since the
+    // main frame may already have the binding.
+    for (let attempt = 1; ; attempt++) {
+        const exist = await page.evaluate((name) => {
+            return !!window[name];
+        }, name);
+        if (exist) {
+            return;
+        }
+        try {
+            await page.exposeFunction(name, fn);
+            return;
+        } catch (err) {
+            const transient =
+                /target closed|detached|destroyed|session closed|execution context/i.test(
+                    err?.message ?? String(err),
+                );
+            if (!transient || attempt >= 5) throw err;
+            await new Promise((r) => setTimeout(r, 200 * attempt));
+        }
     }
-    await page.exposeFunction(name, fn);
 }
 
 module.exports = { exposeFunctionIfAbsent };
