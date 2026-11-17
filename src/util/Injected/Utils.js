@@ -853,6 +853,28 @@ exports.LoadUtils = () => {
         return mediaData;
     };
 
+    // TODO: diagnostic for the HEVC send on the Starter, remove once it is understood
+    window.WWebJS.describeError = (error) => {
+        const own = {};
+        for (const key of Object.getOwnPropertyNames(error ?? {})) {
+            const value = error[key];
+            if (key !== 'stack' && value !== null && typeof value !== 'object' && typeof value !== 'function')
+                own[key] = value;
+        }
+        return `${error?.constructor?.name}/${error?.name}: ${error?.message} ${JSON.stringify(own)}\n${String(error?.stack).slice(0, 2000)}`;
+    };
+    for (const name of ['processMediaData', 'sendMessage']) {
+        const original = window.WWebJS[name];
+        window.WWebJS[name] = async (...args) => {
+            try {
+                return await original(...args);
+            } catch (error) {
+                console.error(`[wwebjs-diag] ${name} failed: ${window.WWebJS.describeError(error)}`);
+                throw error;
+            }
+        };
+    }
+
     window.WWebJS.getMessageModel = (message) => {
         const msg = message.serialize();
 
