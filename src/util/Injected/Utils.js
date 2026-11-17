@@ -706,9 +706,88 @@ exports.LoadUtils = () => {
         return stickerInfo;
     };
 
-    // WhatsApp Web only remuxes an HEVC video when the browser plays HEVC; otherwise it transcodes it, which fails where there is no
-    // HEVC decoder (Chromium on Linux without a GPU). WhatsApp accepts HEVC as is, so the check reports support while a video is prepared.
-    // Scoped to the prep: the same check also picks which variant of a received video to download.
+    // Where the browser has no HEVC decoder (Chromium on Linux without a GPU), WhatsApp Web cannot prepare an HEVC video: it transcodes
+    // it when the browser does not play HEVC, and loads it in a <video> for its size and thumbnail. WhatsApp accepts HEVC as is, so the
+    // size and duration come from the MP4 boxes instead, with a blank thumbnail. Null for any other video, or where HEVC decodes.
+    window.WWebJS.readUndecodableHevc = async (file) => {
+        if (
+            file.type.indexOf('video/') !== 0 ||
+            document
+                .createElement('video')
+                .canPlayType('video/mp4; codecs="hvc1"') === 'probably'
+        )
+            return null;
+
+        const view = new DataView(await file.arrayBuffer());
+        const fourcc = (at) =>
+            String.fromCharCode(
+                view.getUint8(at),
+                view.getUint8(at + 1),
+                view.getUint8(at + 2),
+                view.getUint8(at + 3),
+            );
+        const boxes = (start, end) => {
+            const list = [];
+            for (let at = start; at + 8 <= end; ) {
+                let size = view.getUint32(at);
+                let header = 8;
+                if (size === 1) {
+                    size = Number(view.getBigUint64(at + 8));
+                    header = 16;
+                } else if (size === 0) {
+                    size = end - at;
+                }
+                if (size < header || at + size > end) break;
+                list.push({ type: fourcc(at + 4), start: at + header, end: at + size });
+                at += size;
+            }
+            return list;
+        };
+        const child = (box, type) =>
+            box && boxes(box.start, box.end).find((b) => b.type === type);
+
+        const moov = child({ start: 0, end: view.byteLength }, 'moov');
+        const trak = moov && boxes(moov.start, moov.end).find((b) => {
+            const hdlr = b.type === 'trak' && child(child(b, 'mdia'), 'hdlr');
+            return hdlr && fourcc(hdlr.start + 8) === 'vide';
+        });
+        const mdia = child(trak, 'mdia');
+        const stsd = child(child(child(mdia, 'minf'), 'stbl'), 'stsd');
+        const tkhd = child(trak, 'tkhd');
+        const mdhd = child(mdia, 'mdhd');
+        if (!stsd || !tkhd || !mdhd) return null;
+        if (!['hvc1', 'hev1', 'dvh1', 'dvhe'].includes(fourcc(stsd.start + 12)))
+            return null;
+
+        const matrix = tkhd.start + (view.getUint8(tkhd.start) === 1 ? 52 : 40);
+        const width = Math.round(view.getUint32(matrix + 36) / 65536);
+        const height = Math.round(view.getUint32(matrix + 40) / 65536);
+        const turned = view.getInt32(matrix) === 0;
+        const v1 = view.getUint8(mdhd.start) === 1;
+        const timescale = view.getUint32(mdhd.start + (v1 ? 20 : 12));
+        const duration = v1
+            ? Number(view.getBigUint64(mdhd.start + 24))
+            : view.getUint32(mdhd.start + 16);
+        if (!width || !height || !timescale) return null;
+
+        const fullWidth = turned ? height : width;
+        const fullHeight = turned ? width : height;
+        const scale = 100 / Math.max(fullWidth, fullHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(fullWidth * scale));
+        canvas.height = Math.max(1, Math.round(fullHeight * scale));
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#202c33';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        return {
+            fullWidth,
+            fullHeight,
+            duration: duration / timescale,
+            preview: canvas.toDataURL('image/jpeg').split(',')[1],
+        };
+    };
+
+    // Scoped to the prep: the same check also picks which variant of a received video to download
     window.WWebJS.withHevcSupport = async (enabled, prepare) => {
         let hevcSupport;
         try {
@@ -758,8 +837,13 @@ exports.LoadUtils = () => {
             mediaParams.maxDimension = 2560;
         }
 
+        const undecodableHevc = forceDocument
+            ? null
+            : await window.WWebJS.readUndecodableHevc(file);
+        if (undecodableHevc) mediaParams.precomputedFields = undecodableHevc;
+
         const mediaData = await window.WWebJS.withHevcSupport(
-            file.type.indexOf('video/') === 0,
+            undecodableHevc !== null,
             () =>
                 window
                     .require('WAWebPrepRawMedia')
