@@ -838,9 +838,10 @@ exports.LoadUtils = () => {
             mediaParams.maxDimension = 2560;
         }
 
+        // An MP4 we cannot read goes the regular way instead of failing a send that works today
         const undecodableHevc = forceDocument
             ? null
-            : await window.WWebJS.readUndecodableHevc(file);
+            : await window.WWebJS.readUndecodableHevc(file).catch(() => null);
         if (undecodableHevc) mediaParams.precomputedFields = undecodableHevc;
 
         const mediaData = await window.WWebJS.withHevcSupport(
