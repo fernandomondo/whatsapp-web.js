@@ -782,7 +782,8 @@ exports.LoadUtils = () => {
         return {
             fullWidth,
             fullHeight,
-            duration: duration / timescale,
+            // Whole seconds: WhatsApp Web types it as an integer (VideoTranscoderWamEvent.sourceDuration)
+            duration: Math.max(1, Math.round(duration / timescale)),
             preview: canvas.toDataURL('image/jpeg').split(',')[1],
         };
     };
