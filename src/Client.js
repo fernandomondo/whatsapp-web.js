@@ -1421,6 +1421,7 @@ class Client extends EventEmitter {
      * @property {boolean} [sendMediaAsSticker=false] - Send media as a sticker
      * @property {boolean} [sendMediaAsDocument=false] - Send media as a document
      * @property {boolean} [sendMediaAsHd=false] - Send image as quality HD
+     * @property {string} [videoThumbnail] - Base64 JPEG (no data: prefix) shown as the preview of a video the browser cannot decode, such as HEVC in Chromium without a GPU
      * @property {boolean} [isViewOnce=false] - Send photo/video as a view once message
      * @property {boolean} [parseVCards=true] - Automatically parse vCards and send them as contacts
      * @property {string} [caption] - Image or video caption
@@ -1522,6 +1523,7 @@ class Client extends EventEmitter {
             sendMediaAsSticker: options.sendMediaAsSticker,
             sendMediaAsDocument: options.sendMediaAsDocument,
             sendMediaAsHd: options.sendMediaAsHd,
+            videoThumbnail: options.videoThumbnail,
             caption: options.caption,
             isCaptionByUser: options.caption ? true : false,
             quotedMessageId: options.quotedMessageId,

@@ -1565,6 +1565,8 @@ declare namespace WAWebJS {
         sendMediaAsDocument?: boolean;
         /** Send media as quality HD */
         sendMediaAsHd?: boolean;
+        /** Base64 JPEG (no data: prefix) shown as the preview of a video the browser cannot decode, such as HEVC in Chromium without a GPU */
+        videoThumbnail?: string;
         /** Send photo/video as a view once message */
         isViewOnce?: boolean;
         /** Automatically parse vCards and send them as contacts */

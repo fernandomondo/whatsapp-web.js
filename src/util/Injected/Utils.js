@@ -161,6 +161,7 @@ exports.LoadUtils = () => {
                         forceVoice: options.sendAudioAsVoice,
                         forceDocument: options.sendMediaAsDocument,
                         forceMediaHd: options.sendMediaAsHd,
+                        videoThumbnail: options.videoThumbnail,
                         sendToChannel: isChannel,
                         sendToStatus: isStatus,
                     });
@@ -171,6 +172,7 @@ exports.LoadUtils = () => {
             mediaOptions.isViewOnce = options.isViewOnce;
             delete options.media;
             delete options.sendMediaAsSticker;
+            delete options.videoThumbnail;
         }
 
         let quotedMsgOptions = {};
@@ -817,6 +819,7 @@ exports.LoadUtils = () => {
             forceVoice,
             forceDocument,
             forceMediaHd,
+            videoThumbnail,
             sendToChannel,
             sendToStatus,
         },
@@ -842,7 +845,10 @@ exports.LoadUtils = () => {
         const undecodableHevc = forceDocument
             ? null
             : await window.WWebJS.readUndecodableHevc(file).catch(() => null);
-        if (undecodableHevc) mediaParams.precomputedFields = undecodableHevc;
+        if (undecodableHevc) {
+            if (videoThumbnail) undecodableHevc.preview = videoThumbnail;
+            mediaParams.precomputedFields = undecodableHevc;
+        }
 
         const mediaData = await window.WWebJS.withHevcSupport(
             undecodableHevc !== null,
