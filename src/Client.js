@@ -137,12 +137,20 @@ class Client extends EventEmitter {
             const pairWithPhoneNumber = this.options.pairWithPhoneNumber;
             const version = await this.getWWebVersion();
 
+            // Wait for the WAWebSocketModel module to load (needs polling
+            // because it may not be available right after page load).
+            await this.pupPage.waitForFunction(
+                () =>
+                    window.require?.('WAWebSocketModel')?.Socket != null,
+                { timeout: authTimeout, polling: 200 },
+            );
+
+            // Once the module exists, use an event-driven wait for the
+            // socket state so there is no arbitrary timeout cap.
             const needAuthentication = await this.pupPage.evaluate(
                 async () => {
                     const Socket =
-                        window.require?.('WAWebSocketModel')?.Socket;
-                    if (!Socket) return { need: false, state: null };
-
+                        window.require('WAWebSocketModel').Socket;
                     let state = Socket.state;
                     if (
                         !state ||
