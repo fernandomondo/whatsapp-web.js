@@ -137,49 +137,45 @@ class Client extends EventEmitter {
             const pairWithPhoneNumber = this.options.pairWithPhoneNumber;
             const version = await this.getWWebVersion();
 
-            // Wait for the WAWebSocketModel module to load (needs polling
-            // because it may not be available right after page load).
-            await this.pupPage.waitForFunction(
-                () =>
-                    window.require?.('WAWebSocketModel')?.Socket != null,
-                { timeout: authTimeout, polling: 200 },
-            );
+            // Polls from Node: page timers do not fire for puppeteer's poller on the new login bundle
+            const pollPage = async (fn) => {
+                while (!abort.signal.aborted) {
+                    const result = await this.pupPage
+                        .evaluate(fn)
+                        .catch(() => null); // context destroyed by a navigation
+                    if (result) return result;
+                    await new Promise((r) => setTimeout(r, 200));
+                }
+                return null;
+            };
 
-            // Once the module exists, use an event-driven wait for the
-            // socket state so there is no arbitrary timeout cap.
-            const needAuthentication = await this.pupPage.evaluate(
-                async () => {
-                    const Socket =
-                        window.require('WAWebSocketModel').Socket;
-                    let state = Socket.state;
-                    if (
-                        !state ||
-                        state === 'OPENING' ||
-                        state === 'UNLAUNCHED' ||
-                        state === 'PAIRING'
-                    ) {
-                        await new Promise((resolve) => {
-                            function onStateChange(_prev, newState) {
-                                if (
-                                    newState &&
-                                    newState !== 'OPENING' &&
-                                    newState !== 'UNLAUNCHED' &&
-                                    newState !== 'PAIRING'
-                                ) {
-                                    Socket.off('change:state', onStateChange);
-                                    resolve();
-                                }
-                            }
-                            Socket.on('change:state', onStateChange);
-                        });
-                        state = Socket.state;
-                    }
+            const needAuthentication = await pollPage(() => {
+                const state =
+                    window.require?.('WAWebSocketModel')?.Socket?.state;
+                if (
+                    state &&
+                    state !== 'OPENING' &&
+                    state !== 'UNLAUNCHED' &&
+                    state !== 'PAIRING'
+                ) {
                     return {
                         need: state === 'UNPAIRED' || state === 'UNPAIRED_IDLE',
                         state,
                     };
-                },
-            );
+                }
+                // The login screen is a separate bundle: WAWebSocketModel only loads after pairing
+                if (
+                    !state &&
+                    window
+                        .require?.('WAWebUserPrefsMultiDevice')
+                        ?.isRegistered?.() === false &&
+                    window.require?.('WAWebConnModel')?.Conn?.ref
+                ) {
+                    return { need: true, state: 'LOGIN' };
+                }
+                return false;
+            });
+            if (!needAuthentication) return;
 
             if (needAuthentication.need) {
                 const { failed, failureEventPayload, restart } =
@@ -285,7 +281,7 @@ class Client extends EventEmitter {
                         // Remove QR listener once authentication succeeds
                         window
                             .require('WAWebSocketModel')
-                            .Socket.on('change:hasSynced', () => {
+                            ?.Socket.on('change:hasSynced', () => {
                                 window
                                     .require('WAWebConnModel')
                                     .Conn.off('change:ref', onRefChange);
@@ -304,7 +300,12 @@ class Client extends EventEmitter {
                     ) {
                         // refresh qr code
                         await this.pupPage.evaluate(() => {
-                            window.require('WAWebLaunchSocketUtils').refreshQR();
+                            (
+                                window.require('WAWebLaunchSocketUtils')
+                                    ?.refreshQR ??
+                                window.require('WAWebLoginLaunchSocketUtils')
+                                    .refreshLoginQR
+                            )();
                         });
                     }
                 },
@@ -411,6 +412,10 @@ class Client extends EventEmitter {
                         .catch((_) => _);
                 },
             );
+            const socketReady = await pollPage(
+                () => !!window.require?.('WAWebSocketModel')?.Socket,
+            );
+            if (!socketReady) return;
             await this.pupPage.evaluate(() => {
                 const Socket = window.require('WAWebSocketModel').Socket;
                 const Cmd = window.require('WAWebCmd').Cmd;
@@ -627,8 +632,12 @@ class Client extends EventEmitter {
                 }
                 window.codeInterval = setInterval(async () => {
                     const state =
-                        window.require('WAWebSocketModel').Socket.state;
-                    if (state != 'UNPAIRED' && state != 'UNPAIRED_IDLE') {
+                        window.require('WAWebSocketModel')?.Socket?.state;
+                    if (
+                        state &&
+                        state != 'UNPAIRED' &&
+                        state != 'UNPAIRED_IDLE'
+                    ) {
                         clearInterval(window.codeInterval);
                         return;
                     }
@@ -651,7 +660,10 @@ class Client extends EventEmitter {
                 clearInterval(window.codeInterval);
                 window.codeInterval = undefined;
             }
-            window.require('WAWebLaunchSocketUtils').refreshQR();
+            (
+                window.require('WAWebLaunchSocketUtils')?.refreshQR ??
+                window.require('WAWebLoginLaunchSocketUtils').refreshLoginQR
+            )();
             await window
                 .require('WAWebAltDeviceLinkingApi')
                 .initializeQRLinking();
