@@ -137,26 +137,41 @@ class Client extends EventEmitter {
             const pairWithPhoneNumber = this.options.pairWithPhoneNumber;
             const version = await this.getWWebVersion();
 
-            const needAuthHandle = await this.pupPage.waitForFunction(
-                () => {
-                    const state =
-                        window.require?.('WAWebSocketModel')?.Socket?.state;
+            const needAuthentication = await this.pupPage.evaluate(
+                async () => {
+                    const Socket =
+                        window.require?.('WAWebSocketModel')?.Socket;
+                    if (!Socket) return { need: false, state: null };
+
+                    let state = Socket.state;
                     if (
                         !state ||
                         state === 'OPENING' ||
                         state === 'UNLAUNCHED' ||
                         state === 'PAIRING'
                     ) {
-                        return false;
+                        await new Promise((resolve) => {
+                            function onStateChange(_prev, newState) {
+                                if (
+                                    newState &&
+                                    newState !== 'OPENING' &&
+                                    newState !== 'UNLAUNCHED' &&
+                                    newState !== 'PAIRING'
+                                ) {
+                                    Socket.off('change:state', onStateChange);
+                                    resolve();
+                                }
+                            }
+                            Socket.on('change:state', onStateChange);
+                        });
+                        state = Socket.state;
                     }
                     return {
                         need: state === 'UNPAIRED' || state === 'UNPAIRED_IDLE',
                         state,
                     };
                 },
-                { timeout: authTimeout, polling: 200 },
             );
-            const needAuthentication = await needAuthHandle.jsonValue();
 
             if (needAuthentication.need) {
                 const { failed, failureEventPayload, restart } =
